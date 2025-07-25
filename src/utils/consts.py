@@ -21,10 +21,10 @@ You will be given some examples of LLM generated text descriptions that performe
 Your job is to analyze the current LLM generated node text descriptions, its topological information and the example LLM generated text descriptions, and provide a refined text description for the current node that is more suitable for GNN.
 Below is the original descriptions of the current node containing topological information:
 {current_node_description}
-Below is the current LLM generated text description that did not perform well:
+\n\nBelow is the current LLM generated text description for the current nodethat did not perform well:
 {current_text}
-Below are the examples of LLM generated text descriptions of other nodes that performed well under GNN:
+\n\nBelow are the examples of LLM generated text descriptions of other structurally nodes that performed well under GNN:
 {demos}
-Please provide a refined text description for the current node that is more suitable for GNN.
+\n\nBased on the current node's topological information, text description, and similar node's descriptions, provide a refined text description for the current node that is more suitable for GNN.
 Your refined text description should be concise, clear, and relevant to the node's attributes, and under 200 words.
 """

@@ -1,41 +1,46 @@
-from typing import List, Callable, Tuple
-import torch.nn.functional as F
-
+from typing import List, Tuple
 import torch
-
+import torch.nn.functional as F
 
 class PromptBuffer:
     """
-    Fixed‐size FIFO buffer of text_descriptions.
-    get_k(text, k, embed_fn) returns the top‐k buffer items
-    by cosine similarity to `text`, using `embed_fn(text)->Tensor`.
+    Fixed‑size FIFO buffer storing (node_idx, text, text_emb).
     """
 
     def __init__(self, max_size: int = 10):
         if max_size <= 0:
-            raise ValueError("max_size must be a positive integer")
+            raise ValueError("max_size must be > 0")
         self.max_size = max_size
-        self.buffer: List[Tuple[str, torch.Tensor]] = []  # (text, emb)
-        print(f"PromptBuffer initialized with max_size={max_size}")
+        # each entry: (node_idx: int, text: str, text_emb: Tensor on CPU)
+        self.buffer: List[Tuple[int, str, torch.Tensor]] = []
+        print(f"PromptBuffer initialized (max_size={max_size})")
 
-    def add(self, text: str, emb: torch.Tensor):
-        """Add new text+embedding; evict oldest if over capacity."""
-        self.buffer.append((text, emb.detach().cpu()))
+    def add(self, node_idx: int, text: str, text_emb: torch.Tensor):
+        """Add new entry; evict oldest if over capacity."""
+        self.buffer.append((node_idx, text, text_emb.detach().cpu()))
         if len(self.buffer) > self.max_size:
             self.buffer.pop(0)
 
-    def get_k(self, query_text: str, query_emb: torch.Tensor, k: int) -> List[List[str]]:
-        """
-        Return top-k buffer entries by cosine similarity between query_emb and stored emb.
-        Each demo is (orig, refined) but here orig==refined==stored text.
-        """
-        # compute cosine similarities
+    def get_k_text(self, query_emb: torch.Tensor, k: int) -> List[str]:
+        """Top‑k by cosine similarity in text embedding space."""
         sims = []
-        for text, emb in self.buffer:
-            emb = emb.to(query_emb.device)
-            cos = F.cosine_similarity(query_emb.unsqueeze(0), emb.unsqueeze(0)).item()
-            sims.append((cos, text))
-        # select top-k by similarity
+        for _, txt, emb in self.buffer:
+            sim = F.cosine_similarity(
+                query_emb.unsqueeze(0),
+                emb.to(query_emb.device).unsqueeze(0),
+                dim=1
+            ).item()
+            sims.append((sim, txt))
         sims.sort(key=lambda x: x[0], reverse=True)
-        top = sims[:k]
-        return [t for _, t in top]
+        return [txt for _, txt in sims[:k]]
+
+    def get_k_struct(self, query_idx: int, struct_embs: torch.Tensor, k: int) -> List[str]:
+        """Top‑k by cosine similarity in structural embedding space."""
+        q_emb = struct_embs[query_idx].to(torch.float32)
+        sims = []
+        for n_idx, txt, _ in self.buffer:
+            s_emb = struct_embs[n_idx].to(q_emb.device)
+            sim = F.cosine_similarity(q_emb.unsqueeze(0), s_emb.unsqueeze(0), dim=1).item()
+            sims.append((sim, txt))
+        sims.sort(key=lambda x: x[0], reverse=True)
+        return [txt for _, txt in sims[:k]]

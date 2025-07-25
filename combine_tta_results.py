@@ -147,6 +147,31 @@ def main():
     iter_acc.columns = ['iteration','mean_test','std_test']
     print_table(iter_acc, "TTA Test by iteration (mean ± std)")
 
+    # ——— New: Wide summary table ———
+    def print_wide_summary(dataset_name, baseline_mean, baseline_std, iter_df):
+        # 1. format baseline
+        if baseline_mean is not None:
+            baseline_str = f"{baseline_mean:.2f}±{baseline_std:.2f}"
+        else:
+            baseline_str = "N/A"
+
+        # 2. format each iteration
+        iter_labels = [f"Iter{i}" for i in iter_df['iteration']]
+        iter_vals   = [
+            f"{row.mean_test:.2f}±{row.std_test:.2f}"
+            for _, row in iter_df.iterrows()
+        ]
+
+        # 3. build DataFrame
+        wide = pd.DataFrame([ [dataset_name, baseline_str] + iter_vals ],
+                            columns=['Dataset','Baseline'] + iter_labels)
+
+        # 4. print
+        print_table(wide, "Summary (Baseline & Iterations)")
+
+    print_wide_summary(args.dataset, baseline_mean, baseline_std, iter_acc)
+    # ————————————————————————
+
     # Baseline summary (just once, above) and now entropy
     df_ent = load_entropy(logs_dir, seeds, iters)
     if not df_ent.empty:

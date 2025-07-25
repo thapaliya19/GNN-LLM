@@ -9,7 +9,7 @@ from torch.optim import AdamW
 
 from torch_geometric.data import Data, HeteroData
 
-from src.model.llm_client_vllm import LLMClientVllm
+# from src.model.llm_client_vllm import LLMClientVllm
 from src.model.llm_client_ollama import LLMClientOllama
 from src.model.prompt_buffer import PromptBuffer
 from src.model.model import GNN
@@ -39,6 +39,9 @@ import pandas as pd
 from src.utils.consts import SBERT_MODELS
 
 from sentence_transformers import SentenceTransformer
+
+from torch_geometric.nn import Node2Vec
+
 
 os.environ["VLLM_USE_V1"] = "1"
 
@@ -218,6 +221,37 @@ def run(
     graph = get_data(params, params["data"])
     splits = get_split(graph.y, params)
 
+    # --- Node2Vec training ---
+    print("Training Node2Vec for structural embeddings…")
+    node2vec = Node2Vec(
+        graph.edge_index,
+        embedding_dim   = params['struct_dim'],
+        walk_length     = params['struct_walk_length'],
+        context_size    = params['struct_context_size'],
+        walks_per_node  = params['struct_walks_per_node'],
+        num_negative_samples = params['struct_neg_samples'],
+        p               = params.get('struct_p', 1.0),
+        q               = params.get('struct_q', 1.0),
+        sparse          = True,
+    ).to(device)
+
+    loader = node2vec.loader(batch_size=params.get('struct_batch_size', 128), shuffle=True)
+    optim_n2v = torch.optim.SparseAdam(node2vec.parameters(), lr=params.get('struct_lr',1e-3))
+
+    for epoch in range(params.get('struct_epochs',5)):
+        total_loss = 0
+        for pos_rw, neg_rw in loader:
+            optim_n2v.zero_grad()
+            loss_n2v = node2vec.loss(pos_rw.to(device), neg_rw.to(device))
+            loss_n2v.backward()
+            optim_n2v.step()
+            total_loss += loss_n2v.item()
+        print(f"  Node2Vec epoch {epoch+1}/{params['struct_epochs']}, loss={total_loss:.4f}")
+    print("Node2Vec training complete.")
+
+    # detach and store on CPU
+    graph.struct_embs = node2vec.embedding.weight.detach().cpu()
+
     model = GNN(
         input_dim=graph.num_dim,
         hidden_dim=params["hidden_dim"],
@@ -313,10 +347,10 @@ def run(
                 # Add to buffer
                 print(f"Adding {len(sorted_indices)} best confs to the buffer.")
                 for buff_idx in sorted_indices:
-                    desc = result["true_train_descs"][buff_idx]
-                    emb = embed_text(desc, model=model_sbert)
-                    emb = torch.tensor(emb, dtype=torch.float32).to(device)
-                    buffer.add(desc, emb)
+                    node_idx = result["true_train_indices"][buff_idx]
+                    desc     = result["true_train_descs"][buff_idx]
+                    emb      = torch.tensor(embed_text(desc, model=model_sbert), dtype=torch.float32).to(device)
+                    buffer.add(node_idx, desc, emb)
                 print(
                     f"Buffer size after adding: {len(buffer.buffer)} / {params['buffer_size']}"
                 )
@@ -399,17 +433,20 @@ def run(
 
                 print(f"Updated {updated}/{len(node_idxs)} high‑entropy nodes from cache")
             else:
-            # For each high entropy text, use the node_idxs
+            # For each high entropy text, get the structurally similar node's descriptions
                 demos_list = []
-                for desc in old_texts:
-                    emb = embed_text(desc, model=model_sbert)
-                    emb = torch.tensor(emb, dtype=torch.float32).to(device)
-                    demos = buffer.get_k(desc, emb, params["buffer_k"])
-                    if not demos:
-                        print(
-                            "No demos found in buffer for text: {}".format(desc)
+                for idx, old_desc in zip(node_idxs, old_texts):
+                    if params.get("demos_method", "struct") == "struct":
+                        # structural similarity
+                        demos = buffer.get_k_struct(
+                            query_idx=idx,
+                            struct_embs=data.struct_embs,
+                            k=params["buffer_k"]
                         )
-                        demos = [""]
+                    else:
+                        # fallback to text similarity
+                        emb = torch.tensor(embed_text(old_desc, model=model_sbert), dtype=torch.float32).to(device)
+                        demos = buffer.get_k_text(emb, params["buffer_k"])
                     demos_list.append(demos)
 
                 # Rewrite all in batch with individual demos

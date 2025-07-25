@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -C gpu                              # a100 or similar GPUs
+#SBATCH -C a100,gpu                              # a100 or similar GPUs
 #SBATCH --partition=general-gpu             # partition name
 #SBATCH --nodes=1                           # run on one node
 #SBATCH --ntasks=1                          # one task per job
@@ -34,10 +34,12 @@ ollama serve &> ollama_logs/ollama_seed_${seed}.log &
 OLLAMA_PID=$!
 sleep 10  # give it time to warm up
 
+nvidia-smi
+
 # 4) activate your environment
 echo "Activating conda environment..."
-source ~/miniconda3/etc/profile.d/conda.sh
-conda activate new_llm
+source ~/miniconda3-10/etc/profile.d/conda.sh
+conda activate base
 
 # 5) run your experiment
 python autoprompt.py \
@@ -55,7 +57,8 @@ python autoprompt.py \
   --buffer_size 20 \
   --buffer_k 5 \
   --tta_max_iters 5 \
-  --entropy_thr 0.5
+  --entropy_thr 0.5 \
+  --struct_epochs 20 # this is just for experiment
 
 EXIT_CODE=$?
 
