@@ -36,8 +36,7 @@ class LLMClientOllama:
             Generated text (full content if not streaming, concatenated otherwise).
         """
         response = ollama_generate(self.model_name, prompt, stream=False)
-
-        return response["response"].strip()
+        return response["response"].strip().replace("\n", " ").replace("  ", " ")
 
     def batch_generate(self, prompts: List[str]) -> List[str]:
         """

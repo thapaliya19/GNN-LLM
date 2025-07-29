@@ -63,6 +63,9 @@ def get_args():
     parser.add_argument(
         "--output_dir", type=str, default="output", help="Output directory for results"
     )
+    parser.add_argument(
+        "--save_model", action="store_true", help="Save the model after training"
+    )
 
     # Emb Config
     parser.add_argument("--node_text", type=str, nargs="+", default="none")
@@ -229,6 +232,8 @@ def get_args():
         default=1,
         help="Number of epochs to train structural embeddings",
     )
+
+    parser.add_argument("--demos_method", type=str, default=None)
 
     args = parser.parse_args()
     return vars(args)

@@ -1,33 +1,30 @@
 import copy
 import json
+import os
+import os.path as osp
+from argparse import Namespace
 from typing import Any, Dict, List, Tuple, Union
 
+import pandas as pd
 import torch
-import torch.nn.functional as F
 import torch.nn as nn
+import torch.nn.functional as F
+import yaml
+from sentence_transformers import SentenceTransformer
 from torch.optim import AdamW
-
 from torch_geometric.data import Data, HeteroData
-
-# from src.model.llm_client_vllm import LLMClientVllm
-from src.model.llm_client_ollama import LLMClientOllama
-from src.model.prompt_buffer import PromptBuffer
-from src.model.model import GNN
-
-from argparse import Namespace
-
-from src.utils.args import get_args
+from torch_geometric.nn import Node2Vec
 
 import wandb
-import yaml
-
-import os.path as osp
-import os
-
 from src.data.data import get_data
 from src.data.split import get_split
+from src.model.llm_client_ollama import LLMClientOllama
+from src.model.model import GNN
+from src.model.prompt_buffer import PromptBuffer
+from src.utils.args import get_args
+from src.utils.consts import SBERT_MODELS
 from src.utils.early_stop import EarlyStopping
-from src.utils.eval import evaluate, dataset2metric
+from src.utils.eval import dataset2metric, evaluate
 from src.utils.logger import Logger
 from src.utils.utils import (
     flip_edges,
@@ -35,15 +32,6 @@ from src.utils.utils import (
     get_device_from_model,
     seed_everything,
 )
-import pandas as pd
-from src.utils.consts import SBERT_MODELS
-
-from sentence_transformers import SentenceTransformer
-
-from torch_geometric.nn import Node2Vec
-
-
-os.environ["VLLM_USE_V1"] = "1"
 
 
 def train_gnn(model, data, split, optimizer, params):
@@ -83,7 +71,7 @@ def eval_gnn(model, data, split, params):
 
     # get per-class probabilities and confidences
     probs = F.softmax(y_pred, dim=-1)
-    confs, preds = torch.max(probs, dim=-1)                # preds is the argmax class
+    confs, preds = torch.max(probs, dim=-1)  # preds is the argmax class
     confs = confs.cpu().tolist()
     preds = preds.cpu().tolist()
     y_true = y.cpu().tolist()
@@ -105,62 +93,72 @@ def eval_gnn(model, data, split, params):
 
     # (you can still compute the overall metrics as before)
     train_value = evaluate(y_pred, y, train_mask, params)
-    val_value   = evaluate(y_pred, y, val_mask, params)
-    test_value  = evaluate(y_pred, y, test_mask, params)
+    val_value = evaluate(y_pred, y, val_mask, params)
+    test_value = evaluate(y_pred, y, test_mask, params)
 
     return {
         "train": train_value,
-        "val":   val_value,
-        "test":  test_value,
+        "val": val_value,
+        "test": test_value,
         "metric": dataset2metric[params["data"]],
         # NEW: correct (true) train‐predictions, sorted by confidence
         "true_train_indices": true_train_idx_sorted,
-        "true_train_confs":   true_train_confs,
-        "true_train_descs":   true_train_descs,
+        "true_train_confs": true_train_confs,
+        "true_train_descs": true_train_descs,
     }
 
 
 def pred_gnn(
     model: torch.nn.Module,
-    data: Union[Data, HeteroData],  # PyG Data object
-    split: Dict[str, torch.Tensor],  # {'train': mask, 'val': mask, 'test': mask}
+    data: Union[Data, HeteroData],
+    split: Dict[str, torch.Tensor],
     params: Dict[str, Any],
-) -> Dict[str, Any]:
+) -> List[Tuple[int, str, str, int, int, float]]:
     model.eval()
     device = get_device_from_model(model)
 
-    # Move data to device
     x = data.x.to(device)
     edge_index = data.edge_index.to(device)
     y = data.y.squeeze().to(device)
 
-    # Forward
+    # forward
     z = model.encode(x, edge_index)
     y_pred = model.predict(z)
 
-    # Compute confidence scores
     probs = F.softmax(y_pred, dim=-1)
-
+    # per-node confidence and predicted class
+    confs, preds = torch.max(probs, dim=-1)
     entropies = entropy(probs=probs)
 
-    # use entropy threshold only on test split nodes
     test_mask = split["test"]
+    # indices within the test split whose entropy is high
     high_entropy_idxs = torch.nonzero(
         entropies[test_mask] > params["entropy_thr"], as_tuple=False
     )
     if high_entropy_idxs.numel() == 0:
         return []
-    nodes = []
+
+    records = []
+    # gather global indices of high-entropy nodes
+    test_indices = test_mask.nonzero(as_tuple=False).squeeze()
     for rel_idx in high_entropy_idxs.squeeze().tolist():
-        idx = test_mask.nonzero()[rel_idx].item()
-        nodes.append((idx, data.text_descriptions[idx], data.topo_descriptions[idx]))
-    return nodes
+        idx = test_indices[rel_idx].item()
+        records.append(
+            (
+                idx,
+                data.text_descriptions[idx],
+                data.topo_descriptions[idx],
+                y[idx].item(),  # true label
+                preds[idx].item(),  # predicted label
+                confs[idx].item(),  # confidence
+            )
+        )
+    return records
 
 
 def embed_text(text: str, model: nn.Module) -> torch.Tensor:
     """Encode text using sentence-bert model"""
     return model.encode(text)
-    
 
 
 def main():
@@ -225,20 +223,24 @@ def run(
     print("Training Node2Vec for structural embeddings…")
     node2vec = Node2Vec(
         graph.edge_index,
-        embedding_dim   = params['struct_dim'],
-        walk_length     = params['struct_walk_length'],
-        context_size    = params['struct_context_size'],
-        walks_per_node  = params['struct_walks_per_node'],
-        num_negative_samples = params['struct_neg_samples'],
-        p               = params.get('struct_p', 1.0),
-        q               = params.get('struct_q', 1.0),
-        sparse          = True,
+        embedding_dim=params["struct_dim"],
+        walk_length=params["struct_walk_length"],
+        context_size=params["struct_context_size"],
+        walks_per_node=params["struct_walks_per_node"],
+        num_negative_samples=params["struct_neg_samples"],
+        p=params.get("struct_p", 1.0),
+        q=params.get("struct_q", 1.0),
+        sparse=True,
     ).to(device)
 
-    loader = node2vec.loader(batch_size=params.get('struct_batch_size', 128), shuffle=True)
-    optim_n2v = torch.optim.SparseAdam(node2vec.parameters(), lr=params.get('struct_lr',1e-3))
+    loader = node2vec.loader(
+        batch_size=params.get("struct_batch_size", 128), shuffle=True
+    )
+    optim_n2v = torch.optim.SparseAdam(
+        node2vec.parameters(), lr=params.get("struct_lr", 1e-3)
+    )
 
-    for epoch in range(params.get('struct_epochs',5)):
+    for epoch in range(params.get("struct_epochs", 5)):
         total_loss = 0
         for pos_rw, neg_rw in loader:
             optim_n2v.zero_grad()
@@ -246,7 +248,9 @@ def run(
             loss_n2v.backward()
             optim_n2v.step()
             total_loss += loss_n2v.item()
-        print(f"  Node2Vec epoch {epoch+1}/{params['struct_epochs']}, loss={total_loss:.4f}")
+        print(
+            f"  Node2Vec epoch {epoch+1}/{params['struct_epochs']}, loss={total_loss:.4f}"
+        )
     print("Node2Vec training complete.")
 
     # detach and store on CPU
@@ -264,11 +268,6 @@ def run(
     ).to(device)
     logger = Logger()
 
-    # llm_client = LLMClientVllm(
-    #     model_name=params['llm'],
-    #     max_output_tokens=params['max_output_tokens'],
-    #     temperature=params['temperature'],
-    # )
     llm_client = LLMClientOllama(
         model_name=params["llm"],
     )
@@ -276,23 +275,12 @@ def run(
 
     model_sbert = SentenceTransformer(SBERT_MODELS[params["emb_model"]])
 
-    # Prepare results file path
     out_dir = osp.join(params["output_dir"], params["data"], params["llm"])
     os.makedirs(out_dir, exist_ok=True)
-    results_path = osp.join(out_dir, "results.json")
-
-    # Load existing results if available
-    if osp.exists(results_path):
-        with open(results_path, 'r') as f:
-            all_results = json.load(f)
-    else:
-        all_results = {}
-
 
     for seed_idx, (seed, split) in enumerate(zip(params["seed"], splits)):
         seed_everything(seed)
         buffer = PromptBuffer(max_size=params["buffer_size"])
-
 
         data = copy.deepcopy(graph)
 
@@ -348,8 +336,10 @@ def run(
                 print(f"Adding {len(sorted_indices)} best confs to the buffer.")
                 for buff_idx in sorted_indices:
                     node_idx = result["true_train_indices"][buff_idx]
-                    desc     = result["true_train_descs"][buff_idx]
-                    emb      = torch.tensor(embed_text(desc, model=model_sbert), dtype=torch.float32).to(device)
+                    desc = result["true_train_descs"][buff_idx]
+                    emb = torch.tensor(
+                        embed_text(desc, model=model_sbert), dtype=torch.float32
+                    ).to(device)
                     buffer.add(node_idx, desc, emb)
                 print(
                     f"Buffer size after adding: {len(buffer.buffer)} / {params['buffer_size']}"
@@ -361,12 +351,26 @@ def run(
         after_train_result = eval_gnn(task_model, data, split, params)
         print(
             "After Train Result/Before TTA - Train: {:.4f}, Val: {:.4f}, Test: {:.4f}".format(
-                after_train_result["train"], after_train_result["val"], after_train_result["test"]
+                after_train_result["train"],
+                after_train_result["val"],
+                after_train_result["test"],
             )
         )
 
-        # After training, run test-time-adaptation
-        seed_entry: Dict[str, Any] = {"tta": {}}
+        # save model
+        if params["save_model"]:
+            model_save_path = os.path.join(out_dir, f"model_seed_{seed}.pth")
+            torch.save(
+                {
+                    "model_state_dict": task_model.state_dict(),
+                    "params": params,
+                },
+                model_save_path,
+            )
+            print(f"Saved trained GNN to {model_save_path}")
+
+        # ---- Test-Time Adaptation (TTA) ----
+        print("Starting Test-Time Adaptation (TTA)…")
 
         # to track high entropy nodes and their updated descriptions
         history_records = []
@@ -378,13 +382,12 @@ def run(
             # Paths for this iteration
             desc_csv = osp.join(
                 out_dir,
-                f"updated_descriptions_{params['data']}_{params['llm']}_tta_iter_{iteration}_seed_{seed}.csv"
+                f"updated_descriptions_{params['data']}_{params['llm']}_tta_iter_{iteration}_seed_{seed}.csv",
             )
             iter_json = osp.join(
-                out_dir,
-                f"tta_results_seed_{seed}_iter_{iteration}.json"
+                out_dir, f"tta_results_seed_{seed}_iter_{iteration}.json"
             )
-            
+
             # --- CACHE-MISS: original TTA generation & save ---
             print(
                 f"Test-time adaptation iteration {iteration + 1}/{params['tta_max_iters']}"
@@ -395,17 +398,24 @@ def run(
                     f"No high-entropy nodes found at iteration {iteration + 1}; stopping TTA."
                 )
                 break
-            node_idxs, old_texts, topo_descriptions = zip(*high_entropy)
+            (
+                node_idxs,
+                old_texts,
+                topo_descriptions,
+                true_labels,
+                pred_labels,
+                confidences,
+            ) = zip(*high_entropy)
             curr_set = set(node_idxs)
             print(f"{len(curr_set)} high‑entropy nodes: {sorted(curr_set)}")
 
             print(f"Found {len(high_entropy)} high-entropy nodes.")
-            
-            # 2) compare to last iteration
+
+            # 2 compare to last iteration
             if prev_high_set is not None:
                 stayed = prev_high_set & curr_set
                 dropped = prev_high_set - curr_set
-                new     = curr_set - prev_high_set
+                new = curr_set - prev_high_set
                 print(f"    stayed: {sorted(stayed)}")
                 print(f"    dropped: {sorted(dropped)}")
                 print(f"    new:     {sorted(new)}")
@@ -413,11 +423,13 @@ def run(
 
             # Load cached descriptions or generate via LLM
             if osp.exists(desc_csv):
-                print(f"[seed={seed} iter={iteration}] loading cached descriptions from {desc_csv}")
-                df = pd.read_csv(desc_csv)
+                print(
+                    f"[seed={seed} iter={iteration}] loading cached descriptions from {desc_csv}"
+                )
+                df = pd.read_csv(desc_csv, sep="\t")
 
                 # Build a mapping: row_index → answer
-                answer_map: Dict[int, str] = df['answer'].to_dict()
+                answer_map: Dict[int, str] = df["answer"].to_dict()
 
                 # Only update those high‑entropy nodes
                 updated = 0
@@ -430,49 +442,108 @@ def run(
                     data.x[idx] = torch.tensor(emb, dtype=torch.float32).to(device)
                     updated += 1
                     refined_texts.append(new)
-
-                print(f"Updated {updated}/{len(node_idxs)} high‑entropy nodes from cache")
-            else:
-            # For each high entropy text, get the structurally similar node's descriptions
-                demos_list = []
-                for idx, old_desc in zip(node_idxs, old_texts):
                     if params.get("demos_method", "struct") == "struct":
-                        # structural similarity
                         demos = buffer.get_k_struct(
                             query_idx=idx,
                             struct_embs=data.struct_embs,
-                            k=params["buffer_k"]
+                            k=params["buffer_k"],
                         )
+                        print(
+                            f"[STRUCT] Node {idx}: Top-{params['buffer_k']} similar nodes (with scores):"
+                        )
+                        for nid, sim, txt in demos:
+                            print(f"  → Node {nid}, sim = {sim:.4f}")
                     else:
-                        # fallback to text similarity
-                        emb = torch.tensor(embed_text(old_desc, model=model_sbert), dtype=torch.float32).to(device)
+                        emb = torch.tensor(
+                            embed_text(old, model=model_sbert), dtype=torch.float32
+                        ).to(device)
                         demos = buffer.get_k_text(emb, params["buffer_k"])
-                    demos_list.append(demos)
+                        print(
+                            f"[TEXT] Node {idx}: Top-{params['buffer_k']} similar nodes (with scores):"
+                        )
+                        for nid, sim, txt in demos:
+                            print(f"  → Node {nid}, sim = {sim:.4f}")
+
+                print(
+                    f"Updated {updated}/{len(node_idxs)} high‑entropy nodes from cache"
+                )
+            else:
+                # For each high entropy text, get the structurally similar node's descriptions
+                demos_list = []
+                for idx, old_desc in zip(node_idxs, old_texts):
+                    if params.get("demos_method", "struct") == "struct":
+                        demos = buffer.get_k_struct(
+                            query_idx=idx,
+                            struct_embs=data.struct_embs,
+                            k=params["buffer_k"],
+                        )
+                        print(
+                            f"[STRUCT] Node {idx}: Top-{params['buffer_k']} similar nodes (with scores):"
+                        )
+                        for nid, sim, txt in demos:
+                            print(f"  → Node {nid}, sim = {sim:.4f}")
+                    else:
+                        emb = torch.tensor(
+                            embed_text(old_desc, model=model_sbert), dtype=torch.float32
+                        ).to(device)
+                        demos = buffer.get_k_text(emb, params["buffer_k"])
+                        print(
+                            f"[TEXT] Node {idx}: Top-{params['buffer_k']} similar nodes (with scores):"
+                        )
+                        for nid, sim, txt in demos:
+                            print(f"  → Node {nid}, sim = {sim:.4f}")
+                    demos_list.append([txt for (_, _, txt) in demos])
 
                 # Rewrite all in batch with individual demos
-                refined_texts = llm_client.batch_rewrite(old_texts, demos_list, topo_descriptions)
+                refined_texts = llm_client.batch_rewrite(
+                    old_texts, demos_list, topo_descriptions
+                )
                 print(f"Refined {len(refined_texts)} high-entropy nodes.")
 
                 # 3) Update embeddings/descriptions in-place
-                for (node_idx, _, _), new_desc in zip(high_entropy, refined_texts):
+                for (
+                    node_idx,
+                    old_text,
+                    topo_desc,
+                    true_lbl,
+                    pred_lbl,
+                    conf,
+                ), new_desc in zip(high_entropy, refined_texts):
                     new_emb = embed_text(new_desc, model=model_sbert)
                     new_emb = torch.tensor(new_emb, dtype=torch.float32).to(device)
                     data.x[node_idx] = new_emb
                     data.text_descriptions[node_idx] = new_desc
                     updated_records.append((node_idx, new_desc))
                 # Save updated descriptions in a CSV file
-                df = pd.DataFrame(data.text_descriptions, columns=["answer"])
-                df.to_csv(desc_csv, index=False)
+                df = pd.DataFrame(
+                    {
+                        "node_idx": range(len(data.text_descriptions)),
+                        "answer": data.text_descriptions,
+                    }
+                )
+                df.to_csv(desc_csv, index=False, sep="\t")
                 print(f"Saved descriptions to {desc_csv}")
 
             # record history
-            for idx, old, new in zip(node_idxs, old_texts, refined_texts):
-                history_records.append({
-                    "iteration": iteration,
-                    "node_idx":  idx,
-                    "old_desc":  old,
-                    "new_desc":  new,
-                })
+            for idx, old, new, true_lbl, pred_lbl, conf in zip(
+                node_idxs,
+                old_texts,
+                refined_texts,
+                true_labels,
+                pred_labels,
+                confidences,
+            ):
+                history_records.append(
+                    {
+                        "iteration": iteration,
+                        "node_idx": idx,
+                        "true_label": true_lbl,
+                        "pred_label": pred_lbl,
+                        "confidence": conf,
+                        "old_desc": old,
+                        "new_desc": new,
+                    }
+                )
 
             tta_result = eval_gnn(task_model, data, split, params)
             print(
@@ -483,21 +554,24 @@ def run(
             wandb.log(
                 {
                     "tta/train": tta_result["train"],
-                    "tta/val":   tta_result["val"],
-                    "tta/test":  tta_result["test"],
-                    "tta/metric":tta_result["metric"],
+                    "tta/val": tta_result["val"],
+                    "tta/test": tta_result["test"],
+                    "tta/metric": tta_result["metric"],
                 }
             )
             # write per‐iter JSON
             with open(iter_json, "w") as jf:
-                json.dump({
-                    "seed":      seed,
-                    "iteration": iteration,
-                    "train":     tta_result["train"],
-                    "val":       tta_result["val"],
-                    "test":      tta_result["test"],
-                }, jf, indent=4)
-
+                json.dump(
+                    {
+                        "seed": seed,
+                        "iteration": iteration,
+                        "train": tta_result["train"],
+                        "val": tta_result["val"],
+                        "test": tta_result["test"],
+                    },
+                    jf,
+                    indent=4,
+                )
 
         # After adaptation, run final evaluation
         final_result = eval_gnn(task_model, data, split, params)
@@ -505,7 +579,9 @@ def run(
         # save the per-seed history out to disk
         print(f"About to save {len(history_records)} history rows")
         df_hist = pd.DataFrame(history_records)
-        df_hist.to_csv(osp.join(out_dir, f"tta_history_seed_{seed}.csv"), index=False)
+        df_hist.to_csv(
+            osp.join(out_dir, f"tta_history_seed_{seed}.csv"), index=False, sep="\t"
+        )
 
         single_best = logger.get_single_best(seed_idx)
         wandb.log(
@@ -515,34 +591,7 @@ def run(
                 "best/test": final_result["test"],
             }
         )
-        seed_entry["final"] = {"train": single_best["train"], "val": single_best["val"], "test": final_result["test"]}
 
-        # Update the JSON file without overwriting existing entries
-        all_results[str(seed)] = seed_entry
-        with open(results_path, 'w') as jf:
-            json.dump(all_results, jf, indent=4)
-        print(f"Updated JSON results at {results_path} for seed {seed}")
-
-    best = logger.get_best()
-    wandb.log(
-        {
-            "final/train": "{:.2f} ± {:.2f}".format(
-                best["train"]["mean"], best["train"]["std"]
-            ),
-            "final/val": "{:.2f} ± {:.2f}".format(
-                best["val"]["mean"], best["val"]["std"]
-            ),
-            "final/test": "{:.2f} ± {:.2f}".format(
-                best["test"]["mean"], best["test"]["std"]
-            ),
-            "final/train_mean": best["train"]["mean"],
-            "final/val_mean": best["val"]["mean"],
-            "final/test_mean": best["test"]["mean"],
-            "final/train_std": best["train"]["std"],
-            "final/val_std": best["val"]["std"],
-            "final/test_std": best["test"]["std"],
-        }
-    )
     wandb.log({"meta/run": logger.get_run_raw(), "meta/best": logger.get_best_raw()})
 
     wandb.finish()

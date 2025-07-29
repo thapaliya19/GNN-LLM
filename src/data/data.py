@@ -5,6 +5,10 @@ import torch
 from torch_geometric.transforms import ToUndirected
 from torch_geometric.datasets import Airports
 
+from sentence_transformers import SentenceTransformer
+
+from src.utils.consts import SBERT_MODELS
+
 citation_networks = ['cora', 'pubmed']
 airport_networks = ['usa', 'europe', 'brazil']
 
@@ -26,9 +30,9 @@ def citation_graph(params, dataset_name):
     data.name = dataset_name
 
     # load text embeddings
-    node_text = '_'.join(params['node_text']) if isinstance(params['node_text'], list) else params['node_text']
-    emb_file = osp.join(data_dir, 'text_emb', dataset_name, f"{node_text}_{params['emb_method']}_{params['llm']}_{params['emb_model']}.pt")
-    data.x = torch.load(emb_file).to(torch.float32)
+    # node_text = '_'.join(params['node_text']) if isinstance(params['node_text'], list) else params['node_text']
+    # emb_file = osp.join(data_dir, 'text_emb', dataset_name, f"{node_text}_{params['emb_method']}_{params['llm']}_{params['emb_model']}.pt")
+    # data.x = torch.load(emb_file).to(torch.float32)
 
     # load topological features
     topo_df = pd.read_csv(params['topo_csv'], sep=',')
@@ -38,6 +42,10 @@ def citation_graph(params, dataset_name):
     desc_csv = params['desc_csv']
     df = pd.read_csv(desc_csv, sep='\t')
     data.text_descriptions = df['answer'].tolist()
+
+    sbert = SentenceTransformer(SBERT_MODELS[params["emb_model"]])
+    new_embs = [sbert.encode(txt) for txt in data.text_descriptions]
+    data.x = torch.tensor(new_embs, dtype=torch.float32)
 
     # metadata
     data.num_nodes, data.num_dim = data.x.shape
@@ -53,12 +61,12 @@ def airport_graph(params, dataset_name):
     data = ToUndirected()(data)
     data.name = dataset_name
 
-    node_text = params['node_text']
-    if params['emb_file'] == 'none':
-        emb_file = osp.join(data_dir, 'text_emb', dataset_name, f"{node_text}_{params['emb_method']}_{params['llm']}_{params['emb_model']}.pt")
-    else:
-        emb_file = params['emb_file']
-    data.x = torch.load(emb_file).to(torch.float32)
+    # node_text = params['node_text']
+    # if params['emb_file'] == 'none':
+    #     emb_file = osp.join(data_dir, 'text_emb', dataset_name, f"{node_text}_{params['emb_method']}_{params['llm']}_{params['emb_model']}.pt")
+    # else:
+    #     emb_file = params['emb_file']
+    # data.x = torch.load(emb_file).to(torch.float32)
 
     # load topological features
     topo_df = pd.read_csv(params['topo_csv'], sep=',')
@@ -67,6 +75,10 @@ def airport_graph(params, dataset_name):
     desc_csv = params['desc_csv']
     df = pd.read_csv(desc_csv, sep='\t')
     data.text_descriptions = df['answer'].tolist()
+
+    sbert = SentenceTransformer(SBERT_MODELS[params["emb_model"]])
+    new_embs = [sbert.encode(txt) for txt in data.text_descriptions]
+    data.x = torch.tensor(new_embs, dtype=torch.float32)
 
     data.num_nodes = data.x.shape[0]
     data.num_edges = data.edge_index.shape[1]

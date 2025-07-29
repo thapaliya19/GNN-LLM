@@ -5,7 +5,6 @@
 #SBATCH --ntasks=1                          # one task per job
 #SBATCH --gres=gpu:1                        # allocate 1 GPU
 #SBATCH --cpus-per-task=8                  # CPU cores per task
-#SBATCH --time=12:00:00                     # time limit per job
 
 set -euxo pipefail
 
@@ -57,8 +56,9 @@ python autoprompt.py \
   --buffer_size 20 \
   --buffer_k 5 \
   --tta_max_iters 5 \
-  --entropy_thr 0.5 \
-  --struct_epochs 20 # this is just for experiment
+  --entropy_thr 0.8 \
+  --struct_epochs 20 \
+  --demos_method struct
 
 EXIT_CODE=$?
 
