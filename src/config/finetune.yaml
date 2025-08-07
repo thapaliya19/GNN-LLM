@@ -1,12 +1,12 @@
 TTA:
   title_abstract:
     cora:
-      hidden_dim: 128
-      num_layers: 2
+      hidden_dim: 32
+      num_layers: 3
       normalize: none
-      lr: 0.001
+      lr: 0.005
       decay: 0.0001
-      dropout: 0.8
+      dropout: 0.5
     pubmed:
       hidden_dim: 256
       num_layers: 2

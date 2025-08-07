@@ -58,7 +58,8 @@ python autoprompt.py \
   --tta_max_iters 5 \
   --entropy_thr 0.8 \
   --struct_epochs 20 \
-  --demos_method struct
+  --demos_method combined \
+  --alpha 0.8
 
 EXIT_CODE=$?
 

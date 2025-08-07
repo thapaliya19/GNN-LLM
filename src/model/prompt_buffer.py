@@ -54,7 +54,7 @@ class PromptBuffer:
         text_emb: torch.Tensor,
         struct_embs: torch.Tensor,
         k: int,
-        alpha: float,
+        buffer_alpha: float,
     ) -> List[Tuple[int, float, float, float, str]]:
         r"""
         Top‑k by weighted combination of text and structural similarities:
@@ -76,7 +76,7 @@ class PromptBuffer:
                 dim=1,
             ).item()
             # combined score
-            score = alpha * cos_text + (1 - alpha) * cos_struct
+            score = buffer_alpha * cos_text + (1 - buffer_alpha) * cos_struct
             sims.append((n_idx, score, cos_text, cos_struct, txt))
         # Sort by combined score
         sims.sort(key=lambda x: x[1], reverse=True)

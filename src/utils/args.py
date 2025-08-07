@@ -24,39 +24,7 @@ def get_args():
     parser.add_argument(
         "--seed",
         type=int,
-        nargs="+",
-        default=[
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            9,
-            10,
-            11,
-            12,
-            13,
-            14,
-            15,
-            16,
-            17,
-            18,
-            19,
-            20,
-            21,
-            22,
-            23,
-            24,
-            25,
-            26,
-            27,
-            28,
-            29,
-            30,
-        ],
+        default=1
     )
     parser.add_argument("--device", type=int, default=0)
 
@@ -236,10 +204,22 @@ def get_args():
     parser.add_argument("--demos_method", type=str, default=None)
 
     parser.add_argument(
-        "--alpha",
+        "--buffer_alpha",
         type=float,
         default=0.5,
-        help="Weight for combining text and structural embeddings",
+        help="Weight for combining text and structural embeddings when retrieving from buffer",
+    )
+
+    parser.add_argument(
+        '--embed_alpha',
+        type=float,
+        default=0.5,
+        help="Weight for combining new and old text embeddings during TTA",
+    )
+
+    parser.add_argument(
+        "--sweep_mode", action="store_true",
+        help="run in sweep mode: skip heavy logging/saving and return metrics"
     )
     
     args = parser.parse_args()

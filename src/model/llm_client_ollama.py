@@ -64,7 +64,7 @@ class LLMClientOllama:
             cur_demos = demos[idx] if isinstance(demos[0], list) else demos  # type: ignore
 
             similar_descriptions = "\n\n".join(
-                [f"Similar text description: {demo}" for demo in cur_demos]
+                [f"Structurally similar node's properties: {demo}" for demo in cur_demos]
             )
             prompt = TTA_PROMPT_TEMPLATE.format(
                 current_text=text, demos=similar_descriptions, current_node_description=topo_desc

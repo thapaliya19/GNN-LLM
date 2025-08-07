@@ -14,16 +14,20 @@ def idx2mask(idx, num_nodes):
     return mask
 
 def get_split(label, params):
-    splits = []
-    for _ in params['seed']:
-        if params['label_setting'] == 'ratio':
-            split = ratio_split(label, params['train_ratio'], params['val_ratio'])
-        elif params['label_setting'] == 'number':
-            split = num_split(label, params['train_num'], params['val_num'])
-        else:
-            raise ValueError('Unknown label setting')
-        splits.append(split)
-    return splits
+    """
+    Generates a single train/val/test split based on params. No iteration over multiple seeds.
+    Expects params['seed'] to be an int.
+    """
+    # set the random seed for reproducibility
+    np.random.seed(params['seed'])
+    torch.manual_seed(params['seed'])
+
+    if params['label_setting'] == 'ratio':
+        return ratio_split(label, params['train_ratio'], params['val_ratio'])
+    elif params['label_setting'] == 'number':
+        return num_split(label, params['train_num'], params['val_num'])
+    else:
+        raise ValueError('Unknown label setting')
 
 
 def ratio_split(label, train_ratio=0.1, val_ratio=0.1):
