@@ -235,5 +235,12 @@ def get_args():
 
     parser.add_argument("--demos_method", type=str, default=None)
 
+    parser.add_argument(
+        "--alpha",
+        type=float,
+        default=0.5,
+        help="Weight for combining text and structural embeddings",
+    )
+    
     args = parser.parse_args()
     return vars(args)

@@ -89,7 +89,7 @@ def eval_gnn(model, data, split, params):
 
     # now pull out the sorted confidences & descriptions
     true_train_confs = [confs[i] for i in true_train_idx_sorted]
-    true_train_descs = [data.text_descriptions[i] for i in true_train_idx_sorted]
+    true_train_descs = [data.topo_descriptions[i] for i in true_train_idx_sorted]
 
     # (you can still compute the overall metrics as before)
     train_value = evaluate(y_pred, y, train_mask, params)
@@ -219,42 +219,43 @@ def run(
     graph = get_data(params, params["data"])
     splits = get_split(graph.y, params)
 
-    # --- Node2Vec training ---
-    print("Training Node2Vec for structural embeddings…")
-    node2vec = Node2Vec(
-        graph.edge_index,
-        embedding_dim=params["struct_dim"],
-        walk_length=params["struct_walk_length"],
-        context_size=params["struct_context_size"],
-        walks_per_node=params["struct_walks_per_node"],
-        num_negative_samples=params["struct_neg_samples"],
-        p=params.get("struct_p", 1.0),
-        q=params.get("struct_q", 1.0),
-        sparse=True,
-    ).to(device)
+    # # --- Node2Vec training ---
+    # print("Training Node2Vec for structural embeddings…")
+    # node2vec = Node2Vec(
+    #     graph.edge_index,
+    #     embedding_dim=params["struct_dim"],
+    #     walk_length=params["struct_walk_length"],
+    #     context_size=params["struct_context_size"],
+    #     walks_per_node=params["struct_walks_per_node"],
+    #     num_negative_samples=params["struct_neg_samples"],
+    #     p=params.get("struct_p", 1.0),
+    #     q=params.get("struct_q", 1.0),
+    #     sparse=True,
+    # ).to(device)
 
-    loader = node2vec.loader(
-        batch_size=params.get("struct_batch_size", 128), shuffle=True
-    )
-    optim_n2v = torch.optim.SparseAdam(
-        node2vec.parameters(), lr=params.get("struct_lr", 1e-3)
-    )
+    # loader = node2vec.loader(
+    #     batch_size=params.get("struct_batch_size", 128), shuffle=True
+    # )
+    # optim_n2v = torch.optim.SparseAdam(
+    #     node2vec.parameters(), lr=params.get("struct_lr", 1e-3)
+    # )
 
-    for epoch in range(params.get("struct_epochs", 5)):
-        total_loss = 0
-        for pos_rw, neg_rw in loader:
-            optim_n2v.zero_grad()
-            loss_n2v = node2vec.loss(pos_rw.to(device), neg_rw.to(device))
-            loss_n2v.backward()
-            optim_n2v.step()
-            total_loss += loss_n2v.item()
-        print(
-            f"  Node2Vec epoch {epoch+1}/{params['struct_epochs']}, loss={total_loss:.4f}"
-        )
-    print("Node2Vec training complete.")
+    # for epoch in range(params.get("struct_epochs", 5)):
+    #     total_loss = 0
+    #     for pos_rw, neg_rw in loader:
+    #         optim_n2v.zero_grad()
+    #         loss_n2v = node2vec.loss(pos_rw.to(device), neg_rw.to(device))
+    #         loss_n2v.backward()
+    #         optim_n2v.step()
+    #         total_loss += loss_n2v.item()
+    #     print(
+    #         f"  Node2Vec epoch {epoch+1}/{params['struct_epochs']}, loss={total_loss:.4f}"
+    #     )
+    # print("Node2Vec training complete.")
 
-    # detach and store on CPU
-    graph.struct_embs = node2vec.embedding.weight.detach().cpu()
+    # # detach and store on CPU
+    # graph.struct_embs = node2vec.embedding.weight.detach().cpu()
+
 
     model = GNN(
         input_dim=graph.num_dim,
@@ -341,6 +342,7 @@ def run(
                         embed_text(desc, model=model_sbert), dtype=torch.float32
                     ).to(device)
                     buffer.add(node_idx, desc, emb)
+                    print(f"Adding node {node_idx} to the buffer.")
                 print(
                     f"Buffer size after adding: {len(buffer.buffer)} / {params['buffer_size']}"
                 )
@@ -368,9 +370,20 @@ def run(
                 model_save_path,
             )
             print(f"Saved trained GNN to {model_save_path}")
-
+        
+        # --- Use GNN embeddings for “structural” retrieval ---
+        # After training each seed’s GNN (`task_model`), compute its hidden representations:
+        with torch.no_grad():
+            # encode() returns the final hidden layer before classification head
+            hidden = task_model.encode(
+                data.x.to(device),
+                data.edge_index.to(device)
+            )
+        # detach and store on CPU for PromptBuffer
+        data.struct_embs = hidden.cpu()
         # ---- Test-Time Adaptation (TTA) ----
         print("Starting Test-Time Adaptation (TTA)…")
+        alpha = params.get("alpha", 0.5)
 
         # to track high entropy nodes and their updated descriptions
         history_records = []
@@ -428,14 +441,15 @@ def run(
                 )
                 df = pd.read_csv(desc_csv, sep="\t")
 
-                # Build a mapping: row_index → answer
-                answer_map: Dict[int, str] = df["answer"].to_dict()
+                # Build a mapping: node_idx → answer
+                df.set_index("node_idx", inplace=True)
+                answer_map = df["answer"].to_dict()
 
                 # Only update those high‑entropy nodes
                 updated = 0
                 refined_texts = []
-                for idx, old in zip(node_idxs, old_texts):
-                    new = answer_map.get(idx, old)
+                for idx, old_desc in zip(node_idxs, old_texts):
+                    new = answer_map.get(idx, old_desc)
                     data.text_descriptions[idx] = new
 
                     emb = embed_text(new, model=model_sbert)
@@ -453,9 +467,9 @@ def run(
                         )
                         for nid, sim, txt in demos:
                             print(f"  → Node {nid}, sim = {sim:.4f}")
-                    else:
+                    elif params.get("demos_method") == "text":
                         emb = torch.tensor(
-                            embed_text(old, model=model_sbert), dtype=torch.float32
+                            embed_text(old_desc, model=model_sbert), dtype=torch.float32
                         ).to(device)
                         demos = buffer.get_k_text(emb, params["buffer_k"])
                         print(
@@ -463,6 +477,23 @@ def run(
                         )
                         for nid, sim, txt in demos:
                             print(f"  → Node {nid}, sim = {sim:.4f}")
+                    elif params.get("demos_method") == "combined":
+                        emb_text = torch.tensor(
+                            embed_text(old_desc, model=model_sbert), dtype=torch.float32
+                        ).to(device)
+                        # Retrieve top-k combined similar nodes
+                        demos = buffer.get_k_combined(
+                            query_idx=idx,
+                            text_emb=emb_text,
+                            struct_embs=data.struct_embs,
+                            k=params["buffer_k"],
+                            alpha=alpha
+                        )
+                        print(f"[COMBINED] Node {idx}: Top-{params['buffer_k']} combined similar nodes:")
+                        for nid, score, cos_t, cos_s, txt in demos:
+                            print(
+                                f"  → Node {nid}: combined={score:.4f} (text={cos_t:.4f}, struct={cos_s:.4f})"
+                            )
 
                 print(
                     f"Updated {updated}/{len(node_idxs)} high‑entropy nodes from cache"
@@ -482,7 +513,7 @@ def run(
                         )
                         for nid, sim, txt in demos:
                             print(f"  → Node {nid}, sim = {sim:.4f}")
-                    else:
+                    elif params.get("demos_method") == "text":
                         emb = torch.tensor(
                             embed_text(old_desc, model=model_sbert), dtype=torch.float32
                         ).to(device)
@@ -492,7 +523,24 @@ def run(
                         )
                         for nid, sim, txt in demos:
                             print(f"  → Node {nid}, sim = {sim:.4f}")
-                    demos_list.append([txt for (_, _, txt) in demos])
+                    elif params.get("demos_method") == "combined":
+                        emb_text = torch.tensor(
+                            embed_text(old_desc, model=model_sbert), dtype=torch.float32
+                        ).to(device)
+                        # Retrieve top-k combined similar nodes
+                        demos = buffer.get_k_combined(
+                            query_idx=idx,
+                            text_emb=emb_text,
+                            struct_embs=data.struct_embs,
+                            k=params["buffer_k"],
+                            alpha=alpha
+                        )
+                        print(f"[COMBINED] Node {idx}: Top-{params['buffer_k']} combined similar nodes:")
+                        for nid, score, cos_t, cos_s, txt in demos:
+                            print(
+                                f"  → Node {nid}: combined={score:.4f} (text={cos_t:.4f}, struct={cos_s:.4f})"
+                            )
+                    demos_list.append([demo[-1] for demo in demos])
 
                 # Rewrite all in batch with individual demos
                 refined_texts = llm_client.batch_rewrite(
@@ -525,7 +573,7 @@ def run(
                 print(f"Saved descriptions to {desc_csv}")
 
             # record history
-            for idx, old, new, true_lbl, pred_lbl, conf in zip(
+            for idx, old_desc, new, true_lbl, pred_lbl, conf in zip(
                 node_idxs,
                 old_texts,
                 refined_texts,
@@ -540,7 +588,7 @@ def run(
                         "true_label": true_lbl,
                         "pred_label": pred_lbl,
                         "confidence": conf,
-                        "old_desc": old,
+                        "old_desc": old_desc,
                         "new_desc": new,
                     }
                 )
