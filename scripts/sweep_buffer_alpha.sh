@@ -12,8 +12,10 @@ set -euxo pipefail
 seed=$1
 dataset=$2
 setting=$3
+embed_alpha=$4
+entropy_thr=$5
 # drop $1 and $2, everything else is node_texts
-node_texts=( "${@:4}" )
+node_texts=( "${@:6}" )
 
 echo "Running seed=${seed} on $(hostname)"
 echo "Node‐texts: ${node_texts[*]}"
@@ -41,7 +43,7 @@ source ~/miniconda3-10/etc/profile.d/conda.sh
 conda activate base
 
 # 5) run your experiment
-python sweep_alpha.py \
+python sweep_buffer_alpha.py \
   --use_params \
   --data ${dataset} \
   --label_setting ratio \
@@ -53,13 +55,16 @@ python sweep_alpha.py \
   --topo_csv /home/ldn24004/autoprompt/datasets/response/${setting}/${dataset}/topo_features.csv \
   --llm gemma3-12b \
   --temperature 0.1 \
-  --buffer_size 20 \
   --buffer_k 5 \
-  --tta_max_iters 5 \
-  --entropy_thr 0.8 \
+  --tta_max_iters 3 \
+  --buffer_size 20 \
   --struct_epochs 20 \
   --demos_method combined \
-  --buffer_alpha 0.2
+  --desc_mode orig_only \
+  --do_tta \
+  --tta_topk 0 \
+  --entropy_thr ${entropy_thr} \
+  --embed_alpha ${embed_alpha} \
 
 EXIT_CODE=$?
 

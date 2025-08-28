@@ -1,16 +1,80 @@
 # data.py
+import os
 import os.path as osp
+import numpy as np
 import pandas as pd
 import torch
 from torch_geometric.transforms import ToUndirected
 from torch_geometric.datasets import Airports
 
 from sentence_transformers import SentenceTransformer
+import tqdm
 
 from src.utils.consts import SBERT_MODELS
 
 citation_networks = ['cora', 'pubmed']
 airport_networks = ['usa', 'europe', 'brazil']
+
+def encode_text_sbert(text, model):
+    """Encode text using sentence-bert model"""
+    return model.encode(text)
+
+
+def check_path(path):
+    """Create directory if it doesn't exist"""
+    if not osp.exists(path):
+        os.makedirs(path)
+
+
+def get_appended_text(data_name, data, params):
+    """Get default text features for nodes and append them to the text descriptions"""
+    
+    node_types = {
+        'cora': 'paper',
+        'pubmed': 'paper',
+        'usa': 'airport',
+        'europe': 'airport',
+        'brazil': 'airport'
+    }
+
+    print(params['node_text'])
+    if data_name in ['usa', 'europe', 'brazil']:
+        default_text = data.topo_descriptions
+    else:
+        # if params['node_text] is list use as is, if it is str, then split
+        if isinstance(params['node_text'], str):
+            params.update({'node_text': params['node_text'].split('_')})
+        path = osp.join(params['data_path'], 'dataset', data_name)
+        default_text = [np.load(osp.join(path, f'{t}.npy')) for t in params['node_text']]
+        default_text = list(zip(*default_text))
+        default_text = [' '.join(t) for t in default_text]
+
+        # Combine texts
+    texts = []
+    template = 'The node type is {}. The node description is {}. The additional node description is {}.'
+    for i in range(len(data.text_descriptions)):
+        t = default_text[i] if default_text is not None else 'na'
+        add_t = data.text_descriptions[i]
+        texts.append(template.format(node_types[data_name], t, add_t))
+    if params['desc_mode'] == 'llm_only':
+        texts = data.text_descriptions
+    elif params['desc_mode'] == 'orig_only':
+        texts = default_text
+    
+    print("Example node text: \n", texts[0]) # print first text for debugging
+        
+    return texts, default_text
+    
+
+
+
+def get_text_embeddings(texts, model):
+    """Get embeddings for a list of texts"""
+    embeddings = []
+    for text in tqdm.tqdm(texts):
+        embeddings.append(encode_text_sbert(text, model))
+    return torch.tensor(embeddings, dtype=torch.float64)
+
 
 def get_data(params, dataset_name):
     if dataset_name in citation_networks:
@@ -29,11 +93,6 @@ def citation_graph(params, dataset_name):
     data = ToUndirected()(data)
     data.name = dataset_name
 
-    # load text embeddings
-    # node_text = '_'.join(params['node_text']) if isinstance(params['node_text'], list) else params['node_text']
-    # emb_file = osp.join(data_dir, 'text_emb', dataset_name, f"{node_text}_{params['emb_method']}_{params['llm']}_{params['emb_model']}.pt")
-    # data.x = torch.load(emb_file).to(torch.float32)
-
     # load topological features
     topo_df = pd.read_csv(params['topo_csv'], sep=',')
     data.topo_descriptions = topo_df['topo_features'].tolist()
@@ -43,8 +102,11 @@ def citation_graph(params, dataset_name):
     df = pd.read_csv(desc_csv, sep='\t')
     data.text_descriptions = df['answer'].tolist()
 
+    texts, default_text = get_appended_text(dataset_name, data, params)
+    data.text_descriptions = default_text
+
     sbert = SentenceTransformer(SBERT_MODELS[params["emb_model"]])
-    new_embs = [sbert.encode(txt) for txt in data.text_descriptions]
+    new_embs = [sbert.encode(txt) for txt in texts]
     data.x = torch.tensor(new_embs, dtype=torch.float32)
 
     # metadata
@@ -76,8 +138,12 @@ def airport_graph(params, dataset_name):
     df = pd.read_csv(desc_csv, sep='\t')
     data.text_descriptions = df['answer'].tolist()
 
+    texts, default_text = get_appended_text(dataset_name, data, params)
+
+    data.text_descriptions = texts
+
     sbert = SentenceTransformer(SBERT_MODELS[params["emb_model"]])
-    new_embs = [sbert.encode(txt) for txt in data.text_descriptions]
+    new_embs = [sbert.encode(txt) for txt in texts]
     data.x = torch.tensor(new_embs, dtype=torch.float32)
 
     data.num_nodes = data.x.shape[0]

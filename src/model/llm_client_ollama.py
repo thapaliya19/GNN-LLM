@@ -3,8 +3,10 @@ from typing import List
 from ollama import generate as ollama_generate
 from ollama._types import ResponseError
 
-from src.utils.consts import LLM_AVAILABLE_OLLAMA as LLM_AVAILABLE, TTA_PROMPT_TEMPLATE
+from src.utils.consts import LLM_AVAILABLE_OLLAMA as LLM_AVAILABLE, TTA_PROMPT_TEMPLATE, CORA_ID2LABEL
 from tqdm.auto import tqdm
+
+from src.model.prompt_buffer import BufferItemReturned
 
 
 class LLMClientOllama:
@@ -47,27 +49,31 @@ class LLMClientOllama:
     def batch_rewrite(
         self,
         texts: List[str],
-        demos: List[List[str]],
-        topo_descriptions: List[str] = [],
+        demos: BufferItemReturned,
         use_batch: bool = False,
         max_retries: int = 3,
+        dataset="cora"
     ) -> List[str]:
         """
         Few-shot rewriting via Ollama:
          - If use_batch: uses batch_generate on constructed prompts.
          - Otherwise uses single_generate in a loop.
         """
+        def label_name(dataset: str, y_id: int) -> str:
+            if dataset == "cora":
+                return CORA_ID2LABEL.get(int(y_id), f"unknown({y_id})")
+            return str(int(y_id))
 
         prompts = []
-        for idx, (text, topo_desc) in enumerate(zip(texts, topo_descriptions)):
+        graph_type = "citation network" if dataset in ["cora", "pubmed"] else "airport network"
+        for idx, text in enumerate(texts):
             # Handle per-instance or shared demos
             cur_demos = demos[idx] if isinstance(demos[0], list) else demos  # type: ignore
 
-            similar_descriptions = "\n\n".join(
-                [f"Structurally similar node's properties: {demo}" for demo in cur_demos]
-            )
+            similar_descriptions = "\n".join([f"- Description: {d.text_desc}\n\tLabel: {label_name(dataset, d.label)}" for d in cur_demos])
+
             prompt = TTA_PROMPT_TEMPLATE.format(
-                current_text=text, demos=similar_descriptions, current_node_description=topo_desc
+                current_node_description=text, demos=similar_descriptions, graph_type=graph_type
             )
             prompts.append(prompt)
         
@@ -78,7 +84,7 @@ class LLMClientOllama:
         # Fallback to individual tldr calls with progress bar
         # fallback: loop with retries
         results: List[str] = []
-        for idx, (prompt, original_desc) in enumerate(zip(prompts, topo_descriptions)):
+        for idx, (prompt, original_desc) in enumerate(zip(prompts, texts)):
             for attempt in range(1, max_retries + 1):
                 try:
                     gen = self.single_generate(prompt)

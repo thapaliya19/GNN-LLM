@@ -21,11 +21,7 @@ def get_args():
         help="Path to the CSV file containing topological features",
     )
 
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=1
-    )
+    parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--device", type=int, default=0)
 
     parser.add_argument(
@@ -211,16 +207,46 @@ def get_args():
     )
 
     parser.add_argument(
-        '--embed_alpha',
+        "--embed_alpha",
         type=float,
         default=0.5,
         help="Weight for combining new and old text embeddings during TTA",
     )
 
     parser.add_argument(
-        "--sweep_mode", action="store_true",
-        help="run in sweep mode: skip heavy logging/saving and return metrics"
+        "--sweep_mode",
+        action="store_true",
+        help="run in sweep mode: skip heavy logging/saving and return metrics",
     )
-    
+
+    parser.add_argument(
+        "--do_tta",
+        action="store_true",
+        help="Whether to perform Test Time Adaptation (TTA)",
+    )
+
+    parser.add_argument(
+        "--tta_topk",
+        type=int,
+        default=20,
+        help="Max number of high-entropy test nodes to adapt per TTA iteration (0 = no cap).",
+    )
+
+    parser.add_argument(
+        "--desc_mode",
+        type=str,
+        default="both",
+        choices=["both", "llm_only", "orig_only"],
+        help="Mode for using node descriptions: 'both' for LLM and original, 'llm_only' for LLM only, 'orig_only' for original only",
+    )
+
+    parser.add_argument("--retriever_hidden_dim", type=int, default=128)
+    parser.add_argument("--retriever_num_layers", type=int, default=2)
+    parser.add_argument("--retriever_lr", type=float, default=1e-3)
+    parser.add_argument("--retriever_epochs", type=int, default=50)
+    parser.add_argument("--retriever_batch_size", type=int, default=64)
+    parser.add_argument("--retriever_batches_per_epoch", type=int, default=100)
+    parser.add_argument("--retriever_temp", type=float, default=0.1)
+
     args = parser.parse_args()
     return vars(args)

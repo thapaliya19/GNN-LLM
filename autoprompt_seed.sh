@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -C a100,gpu                              # a100 or similar GPUs
+#SBATCH -C gpu                              # a100 or similar GPUs
 #SBATCH --partition=general-gpu             # partition name
 #SBATCH --nodes=1                           # run on one node
 #SBATCH --ntasks=1                          # one task per job
@@ -12,8 +12,11 @@ set -euxo pipefail
 seed=$1
 dataset=$2
 setting=$3
+buffer_alpha=$4
+embed_alpha=$5
+entropy_thr=$6
 # drop $1 and $2, everything else is node_texts
-node_texts=( "${@:4}" )
+node_texts=( "${@:7}" )
 
 echo "Running seed=${seed} on $(hostname)"
 echo "Node‐texts: ${node_texts[*]}"
@@ -45,6 +48,8 @@ python autoprompt.py \
   --use_params \
   --data ${dataset} \
   --label_setting ratio \
+  --train_num 20 \
+  --val_num 30 \
   --emb_method TTA \
   --backbone gcn \
   --node_text ${node_texts[@]} \
@@ -56,10 +61,16 @@ python autoprompt.py \
   --buffer_size 20 \
   --buffer_k 5 \
   --tta_max_iters 5 \
-  --entropy_thr 0.8 \
+  --entropy_thr ${entropy_thr} \
   --struct_epochs 20 \
   --demos_method combined \
-  --alpha 0.8
+  --buffer_alpha ${buffer_alpha} \
+  --embed_alpha ${embed_alpha} \
+  --tta_topk 0 \
+  --desc_mode orig_only \
+  --output_dir output_ratio \
+  --do_tta \
+  # --sweep_mode 
 
 EXIT_CODE=$?
 

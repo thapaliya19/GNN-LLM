@@ -36,12 +36,15 @@ def sweep_alpha():
                 params.update(default_params[emb_method][dataset])
 
     # make sure run() uses params["alpha"] internally
-    all_alphas = np.linspace(0.0, 1.0, 11)  # [0.0, 0.1, …, 1.0]
-    best_alpha, best_val = None, -float("inf")
+    # all_alphas = np.linspace(0.0, 1.0, 11)  # [0.0, 0.1, …, 1.0]
+    all_buffer_alpha = np.linspace(0.1, 1.0, 10)  # [0.0, 0.1, …, 1.0]
+    # best_alpha, best_val = None, -float("inf")
+    best_buffer_alpha, best_val = None, -float("inf")
 
-    for alpha in all_alphas:
-        print(f"\n=== Testing alpha = {alpha:.1f} ===")
-        params["embed_alpha"] = float(alpha)
+
+    for buffer_alpha in all_buffer_alpha:
+        print(f"\n=== Testing buffer_alpha = {buffer_alpha:.1f} ===")
+        params["buffer_alpha"] = float(buffer_alpha)
 
         # (re-)train & TTA on training seed(s), but only record the val score
         # Here we assume run() has been refactored to return a dict of metrics:
@@ -50,12 +53,12 @@ def sweep_alpha():
         metrics = run(params)
         val_acc = metrics["best_test"]  # or however your run() reports it
 
-        print(f"-> alpha={alpha:.1f} yields val accuracy {val_acc:.4f}")
+        print(f"-> buffer_alpha={buffer_alpha:.1f} yields val accuracy {val_acc:.4f}")
         if val_acc > best_val:
-            best_val, best_alpha = val_acc, alpha
+            best_val, best_buffer_alpha = val_acc, buffer_alpha
 
-    print(f"\n*** Best alpha = {best_alpha:.1f} with val acc = {best_val:.4f} ***")
-    return best_alpha
+    print(f"\n*** Best buffer_alpha = {best_buffer_alpha:.1f} with val acc = {best_val:.4f} ***")
+    return best_buffer_alpha
 
 if __name__ == "__main__":
     sweep_alpha()
