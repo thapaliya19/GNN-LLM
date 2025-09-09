@@ -53,14 +53,15 @@ def get_appended_text(data_name, data, params):
     texts = []
     template = 'The node type is {}. The node description is {}. The additional node description is {}.'
     for i in range(len(data.text_descriptions)):
-        t = default_text[i] if default_text is not None else 'na'
+        t = default_text[i] if data_name in ['cora', 'pubmed'] else 'na'
         add_t = data.text_descriptions[i]
         texts.append(template.format(node_types[data_name], t, add_t))
     if params['desc_mode'] == 'llm_only':
         texts = data.text_descriptions
     elif params['desc_mode'] == 'orig_only':
         texts = default_text
-    
+
+    print(f"Desc mode: {params['desc_mode']}")
     print("Example node text: \n", texts[0]) # print first text for debugging
         
     return texts, default_text

@@ -13,10 +13,8 @@ seed=$1
 dataset=$2
 setting=$3
 buffer_alpha=$4
-embed_alpha=$5
-entropy_thr=$6
 # drop $1 and $2, everything else is node_texts
-node_texts=( "${@:7}" )
+node_texts=( "${@:5}" )
 
 echo "Running seed=${seed} on $(hostname)"
 echo "Node‐texts: ${node_texts[*]}"
@@ -60,17 +58,14 @@ python autoprompt.py \
   --temperature 0.1 \
   --buffer_size 20 \
   --buffer_k 5 \
-  --tta_max_iters 5 \
-  --entropy_thr ${entropy_thr} \
   --struct_epochs 20 \
   --demos_method combined \
   --buffer_alpha ${buffer_alpha} \
-  --embed_alpha ${embed_alpha} \
   --tta_topk 0 \
   --desc_mode orig_only \
-  --output_dir output_ratio \
-  --do_tta \
-  # --sweep_mode 
+  --output_dir output_ratio_iters \
+  --rewrite_all \
+  --rewrite_iters 5 
 
 EXIT_CODE=$?
 

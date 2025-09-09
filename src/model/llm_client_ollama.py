@@ -3,7 +3,7 @@ from typing import List
 from ollama import generate as ollama_generate
 from ollama._types import ResponseError
 
-from src.utils.consts import LLM_AVAILABLE_OLLAMA as LLM_AVAILABLE, TTA_PROMPT_TEMPLATE, CORA_ID2LABEL
+from src.utils.consts import LLM_AVAILABLE_OLLAMA as LLM_AVAILABLE, TTA_PROMPT_TEMPLATE, CORA_ID2LABEL, PUBMED_ID2LABEL, AIRPORT_ID2LABEL
 from tqdm.auto import tqdm
 
 from src.model.prompt_buffer import BufferItemReturned
@@ -38,6 +38,7 @@ class LLMClientOllama:
             Generated text (full content if not streaming, concatenated otherwise).
         """
         response = ollama_generate(self.model_name, prompt, stream=False)
+        print("Finished generating response")
         return response["response"].strip().replace("\n", " ").replace("  ", " ")
 
     def batch_generate(self, prompts: List[str]) -> List[str]:
@@ -62,7 +63,10 @@ class LLMClientOllama:
         def label_name(dataset: str, y_id: int) -> str:
             if dataset == "cora":
                 return CORA_ID2LABEL.get(int(y_id), f"unknown({y_id})")
-            return str(int(y_id))
+            elif dataset == "pubmed":
+                return PUBMED_ID2LABEL.get(int(y_id), f"unknown({y_id})")
+            else:
+                return AIRPORT_ID2LABEL.get(int(y_id), f"unknown({y_id})")
 
         prompts = []
         graph_type = "citation network" if dataset in ["cora", "pubmed"] else "airport network"

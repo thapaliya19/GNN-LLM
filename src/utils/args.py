@@ -226,6 +226,12 @@ def get_args():
     )
 
     parser.add_argument(
+        "--rewrite_all",
+        action="store_true",
+        help="If set, rewrite descriptions for the entire dataset after training using the JSON buffer."
+    )
+
+    parser.add_argument(
         "--tta_topk",
         type=int,
         default=20,
@@ -248,5 +254,28 @@ def get_args():
     parser.add_argument("--retriever_batches_per_epoch", type=int, default=100)
     parser.add_argument("--retriever_temp", type=float, default=0.1)
 
+    # --- Probabilistic retriever ---
+    parser.add_argument("--retrieval_sampler", type=str, default="softmax",
+                        choices=["topk", "softmax", "nucleus", "stoch_mmr"],
+                        help="Sampling rule for picking buffer demos.")
+    parser.add_argument("--retrieval_tau", type=float, default=0.07,
+                        help="Temperature for softmax/nucleus/stoch_mmr sampling.")
+    parser.add_argument("--retrieval_top_p", type=float, default=0.9,
+                        help="Top-p (nucleus) cumulative mass for 'nucleus' sampler.")
+    parser.add_argument("--retrieval_pool_size", type=int, default=256,
+                        help="How many high-scoring candidates to form the sampling pool from.")
+    parser.add_argument("--retrieval_beta", type=float, default=0.5,
+                        help="Reliability weight mixing coefficient for (score + beta*reliability).")
+
+    parser.add_argument("--rewrite_iters", type=int, default=1,
+                        help="Number of global rewrite iterations.")
+    parser.add_argument("--hist_max_steps", type=int, default=3,
+                        help="How many recent history steps per exemplar to include in prompts.")
+    parser.add_argument(
+        "--rewrite_batch_size",
+        type=int,
+        default=64,
+        help="Batch size for the global rewrite stage; results are saved after every batch to support resume."
+    )
     args = parser.parse_args()
     return vars(args)

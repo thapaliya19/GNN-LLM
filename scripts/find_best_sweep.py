@@ -6,7 +6,7 @@ import yaml
 
 ENTITY = "thapaliya19"
 PROJECT = "autoprompt"
-SWEEP_ID = "132uay00"  # e.g., "abc12345" from the sweep URL .../sweeps/abc12345
+SWEEP_ID = "yznpl2cd"  # e.g., "abc12345" from the sweep URL .../sweeps/abc12345
 # Optional: if you DON'T know SWEEP_ID but know its name, see the helper below.
 
 # Required seed set & coverage threshold:
@@ -21,7 +21,7 @@ METRIC_CANDIDATES = [
     "metrics/test",
 ]
 # Hyperparameters that define a "configuration" (exclude `seed`)
-GROUP_COLS = ["lr", "decay","dropout","hidden_dim","normalize","num_layers"]
+GROUP_COLS = ["dropout","hidden_dim","normalize","num_layers"]
 
 api = wandb.Api()
 sweep = api.sweep(f"{ENTITY}/{PROJECT}/{SWEEP_ID}")

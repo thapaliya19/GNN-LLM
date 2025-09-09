@@ -1,8 +1,7 @@
 import numpy as np
-import torch.nn.functional as F
 import torch
-from torchmetrics import Accuracy, AUROC
-from sklearn.metrics import f1_score, roc_auc_score
+from torchmetrics import Accuracy
+from sklearn.metrics import roc_auc_score
 
 dataset2metric = {
     'cora': 'acc',
@@ -12,6 +11,8 @@ dataset2metric = {
     'brazil': 'acc',
 }
 
+def entropy(probs: torch.Tensor) -> torch.Tensor:
+    return -torch.sum(probs * torch.log(probs + 1e-12), dim=-1)
 
 def evaluate(pred, y, mask=None, params=None):
     metric = dataset2metric[params['data']]

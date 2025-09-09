@@ -1,29 +1,29 @@
 LLM_AVAILABLE_OLLAMA = {
-    'gemma3-1b': 'gemma3:1b',
-    'gemma3-12b': 'gemma3:12b',
+    "gemma3-1b": "gemma3:1b",
+    "gemma3-12b": "gemma3:12b",
 }
 
 LLM_AVAILABLE_VLLM = {
-    'gemma3-1b': 'google/gemma-3-1b-it',
-    'gemma3-12b': 'google/gemma-3-12b-it',
+    "gemma3-1b": "google/gemma-3-1b-it",
+    "gemma3-12b": "google/gemma-3-12b-it",
 }
 
 SBERT_MODELS = {
-    'albert': 'paraphrase-albert-small-v2',
-    'roberta': 'all-distilroberta-v1',
-    'minilm': 'all-MiniLM-L12-v2',
-    'mpnet': 'all-mpnet-base-v2'
+    "albert": "paraphrase-albert-small-v2",
+    "roberta": "all-distilroberta-v1",
+    "minilm": "all-MiniLM-L12-v2",
+    "mpnet": "all-mpnet-base-v2",
 }
 
-DESCRIPTION_TEMPLATE = 'The node type is {}. The node description is {}. The additional node description is {}.'
+DESCRIPTION_TEMPLATE = "The node type is {}. The node description is {}. The additional node description is {}."
 
 NODE_TYPES = {
-        'cora': 'paper',
-        'pubmed': 'paper',
-        'usa': 'airport',
-        'europe': 'airport',
-        'brazil': 'airport'
-    }
+    "cora": "paper",
+    "pubmed": "paper",
+    "usa": "airport",
+    "europe": "airport",
+    "brazil": "airport",
+}
 
 
 # ---- Cora label mapping (id -> name) ----
@@ -35,6 +35,21 @@ CORA_ID2LABEL = {
     4: "Reinforcement Learning",
     5: "Rule Learning",
     6: "Theory",
+}
+
+PUBMED_ID2LABEL = {
+    0: "Diabetes Mellitus Type 1",
+    1: "Diabetes Mellitus Type 2",
+    2: "Experimental Diabetes",
+}
+
+AIRPORT_ID2LABEL = {
+    # these activity labels are generated using ChatGPT by giving description of the label values from paper
+    # Paper used to get descriptions of label: https://arxiv.org/pdf/1704.03165
+    0: "Low Activity (Quartile 1 — bottom 25%)",
+    1: "Medium-Low Activity (Quartile 2 — 25-50%)",
+    2: "Medium-High Activity (Quartile 3 — 50-75%)",
+    3: "High Activity (Quartile 4 — top 25%)"
 }
 
 
@@ -95,4 +110,27 @@ Rewrite the description of the target node so that:
 **Final Output:**  
 A single rewritten description for the target node in less than 200 words.
 
+"""
+
+
+TTA_NEW_PROMPT_TEMPLATE = """
+You are rewriting node descriptions to improve performance of a graph-based classifier.
+Each node is from a {graph_type}.
+
+### Target Node
+Original Description:
+{original_description}
+
+Topological Summary:
+{topo}
+
+### Retrieved Similar Nodes (for reference only)
+{examples_block}
+
+### Instructions
+- Rewrite the target node's description so it is clearer, more informative, and discriminative.
+- Use ONLY the provided inputs (do not invent labels).
+- Keep style natural; ≤ 200 words.
+
+**Final Output (one paragraph, no bullet points, ≤200 words):**
 """

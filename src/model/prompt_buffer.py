@@ -26,6 +26,12 @@ class PromptBuffer:
         print(f"PromptBuffer initialized (max_size={max_size})")
 
     def add(self, node_idx: int, label: int, text: str, text_emb: torch.Tensor):
+        """Add a new entry to the buffer, evicting the oldest if at max size.
+        node_idx: int - node index in graph
+        label: int - true label of the node
+        text: str - text description of the node
+        text_emb: torch.Tensor - text embedding of node description (1D tensor, CPU)
+        """
         entry = BufferEntry(node_idx=node_idx, label=int(label), text=text, text_emb=text_emb.detach().cpu())
         self.buffer.append(entry)
         if len(self.buffer) > self.max_size:
@@ -56,13 +62,30 @@ class PromptBuffer:
         return [(nid, sim, txt) for (nid, sim, txt, _) in sims[:k]]
 
     def get_k_combined(self, query_idx: int, text_emb: torch.Tensor, struct_embs: torch.Tensor, k: int, buffer_alpha: float):
-        q_struct = struct_embs[query_idx].to(text_emb.device).to(torch.float32)
+        # structural query stays wherever struct_embs is (CPU)
+        q_struct = struct_embs[query_idx].to(torch.float32)
+
         sims = []
         for e in self.buffer:
-            cos_t = F.cosine_similarity(text_emb.unsqueeze(0), e.text_emb.to(text_emb.device).unsqueeze(0), dim=1).item()
-            cos_s = F.cosine_similarity(q_struct.unsqueeze(0), struct_embs[e.node_idx].to(text_emb.device).unsqueeze(0), dim=1).item()
-            score = buffer_alpha * cos_t + (1 - buffer_alpha) * cos_s
+            cos_t = F.cosine_similarity(
+                text_emb.unsqueeze(0),
+                e.text_emb.to(text_emb.device).unsqueeze(0),
+                dim=1
+            ).item()
 
-            sims.append(BufferItemReturned(node_idx=e.node_idx, score=score, cos_t=cos_t, cos_s=cos_s, label=e.label, text_desc=e.text))
+            s_struct = struct_embs[e.node_idx].to(q_struct.device)
+            cos_s = F.cosine_similarity(
+                q_struct.unsqueeze(0),
+                s_struct.unsqueeze(0),
+                dim=1
+            ).item()
+
+            score = buffer_alpha * cos_t + (1 - buffer_alpha) * cos_s
+            sims.append(BufferItemReturned(
+                node_idx=e.node_idx, score=score, cos_t=cos_t, cos_s=cos_s,
+                label=e.label, text_desc=e.text
+            ))
+
         sims.sort(key=lambda x: x.score, reverse=True)
         return sims[:k]
+

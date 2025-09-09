@@ -61,3 +61,80 @@ def get_k_retrieval_mmr(query_idx, R, y, k, pos_ratio=0.5, lambda_mmr=0.7):
 
     sel = pos_sel + neg_sel
     return sel[:k]
+
+
+import math
+import torch
+
+def _softmax_weights(scores: torch.Tensor, tau: float) -> torch.Tensor:
+    s = (scores / max(tau, 1e-6)).float()
+    s = s - s.max()  # numeric stability
+    w = torch.exp(s)
+    return w / (w.sum() + 1e-12)
+
+def _nucleus_filter(weights: torch.Tensor, p: float) -> torch.Tensor:
+    # return mask of the smallest prefix whose cumulative mass >= p
+    w_sorted, idx = torch.sort(weights, descending=True)
+    csum = torch.cumsum(w_sorted, dim=0)
+    keep = csum <= p
+    if not torch.any(keep):
+        keep = torch.ones_like(w_sorted, dtype=torch.bool)
+    last = torch.nonzero(keep, as_tuple=False).view(-1)
+    if last.numel() > 0:
+        last_idx = last[-1].item()
+    else:
+        last_idx = 0
+    mask_sorted = torch.zeros_like(w_sorted, dtype=torch.bool)
+    mask_sorted[: last_idx + 1] = True
+    # invert sort
+    mask = torch.zeros_like(weights, dtype=torch.bool)
+    mask[idx] = mask_sorted
+    return mask
+
+def _sample_without_replacement(weights: torch.Tensor, k: int) -> list[int]:
+    # Simple Gumbel-top-k on weights
+    eps = 1e-20
+    g = -torch.log(-torch.log(torch.rand_like(weights).clamp(min=eps)))
+    keys = torch.log(weights.clamp(min=eps)) + g
+    topk = torch.topk(keys, k=min(k, weights.numel()), largest=True).indices
+    return topk.tolist()
+
+def probabilistic_select(scores: torch.Tensor, k: int, tau: float, mode: str, top_p: float = 0.9) -> list[int]:
+    """
+    scores: [N] (higher is better). Returns selected indices.
+    mode ∈ {"softmax", "nucleus"}.
+    """
+    w = _softmax_weights(scores, tau)
+    if mode == "nucleus":
+        mask = _nucleus_filter(w, top_p)
+        w = w * mask
+        w = w / (w.sum() + 1e-12)
+    idx = _sample_without_replacement(w, k)
+    return idx
+
+def stochastic_mmr_scores(q_vec: torch.Tensor, cand_mat: torch.Tensor, selected: list[int], lam: float = 0.7):
+    """
+    Compute MMR scores for candidates given selected set; returns [N] scores.
+    """
+    sim_q = torch.nn.functional.cosine_similarity(cand_mat, q_vec.unsqueeze(0), dim=1)  # [N]
+    if len(selected) == 0:
+        return sim_q
+    S = cand_mat[selected]  # [|S|, D]
+    # redundancy as max similarity to already selected
+    red = torch.max(torch.nn.functional.normalize(cand_mat) @ torch.nn.functional.normalize(S).T, dim=1).values
+    return lam * sim_q - (1.0 - lam) * red
+
+def probabilistic_mmr(q_vec: torch.Tensor, cand_mat: torch.Tensor, k: int, tau: float, lam: float = 0.7) -> list[int]:
+    """
+    Stochastic MMR: iteratively sample 1 item with softmax over MMR scores.
+    """
+    N = cand_mat.size(0)
+    all_idx = list(range(N))
+    chosen = []
+    while len(chosen) < min(k, N):
+        mmr = stochastic_mmr_scores(q_vec, cand_mat, chosen, lam)
+        w = _softmax_weights(mmr, tau)
+        pick = _sample_without_replacement(w, 1)[0]
+        if pick not in chosen:
+            chosen.append(pick)
+    return chosen
