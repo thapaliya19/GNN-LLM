@@ -6,6 +6,7 @@ Below is the instructions to run the code:
 
 Download and extract the dataset from the following link inside the `datasets` folder in the root directory:
 
+[download link for dataset](https://uconn-my.sharepoint.com/:f:/g/personal/ldn24004_uconn_edu/EpVCrbZuoSBLsB-l_VMEs60BNfwekvrpPK9l9pZp8h76xw?e=bNNgLG)
 
 ## Run auroprompting pipeline
 
