@@ -12,7 +12,15 @@ from torch.optim import AdamW
 
 import wandb
 from src.embeddings.structural import train_node2vec
-from src.prompts.builders import append_history_jsonl, build_full_prompt_for_node, dump_train_pred_json, eval_snapshot, format_example_block, load_buffer_from_json, load_history
+from src.prompts.builders import (
+    append_history_jsonl,
+    build_full_prompt_for_node,
+    dump_train_pred_json,
+    eval_snapshot,
+    format_example_block,
+    load_buffer_from_json,
+    load_history,
+)
 from src.data.data import get_data
 from src.data.split import get_split
 from src.model.llm_client_ollama import LLMClientOllama
@@ -172,12 +180,13 @@ def run(
         )
     )
 
-
     # === rewrite the entire dataset using the JSON buffer ===
     if params.get("rewrite_all", False):
         # === dump training predictions JSON  ===
         train_json_path = osp.join(out_dir, f"train_buffer_seed_{seed}.json")
-        buffer_json = dump_train_pred_json(train_json_path, task_model, data, split, params["data"])
+        buffer_json = dump_train_pred_json(
+            train_json_path, task_model, data, split, params["data"]
+        )
         print("[GLOBAL-REWRITE] Building PromptBuffer from JSON...")
 
         # Ensure we have structural embeddings available for retrieval
@@ -196,8 +205,10 @@ def run(
         global_csv_tmpl = osp.join(
             out_dir,
             f"global_rewrite_iter{{it}}_{params['data']}_{params['llm']}_seed_{seed}.csv",
-        ) # new description CSV after each iteration
-        hist_jsonl = osp.join(out_dir, f"icl_history_seed_{seed}.jsonl") # history of training nodes predictions only, for ICL
+        )  # new description CSV after each iteration
+        hist_jsonl = osp.join(
+            out_dir, f"icl_history_seed_{seed}.jsonl"
+        )  # history of training nodes predictions only, for ICL
 
         # For history filtering of training nodes only
         train_idx = split["train"].nonzero(as_tuple=False).view(-1).tolist()
@@ -234,12 +245,14 @@ def run(
             remaining = [nid for nid in node_order if nid not in done]
 
             if len(remaining) == 0:
-                print("[GLOBAL-REWRITE] All nodes already rewritten. Skipping generation.")
+                print(
+                    "[GLOBAL-REWRITE] All nodes already rewritten. Skipping generation."
+                )
             else:
                 K = int(params.get("buffer_k", 5))
                 buffer_alpha = params.get("buffer_alpha", 0.5)
                 bs = int(params.get("rewrite_batch_size", 64))
-                # Load history so far 
+                # Load history so far
                 hist_dict = load_history(hist_jsonl)
 
                 print(
@@ -254,19 +267,23 @@ def run(
                     prompts = []
                     for nid in batch_nids:
                         emb_text = torch.tensor(
-                            embed_text(data.text_descriptions[nid], model=model_sbert), dtype=torch.float32
+                            embed_text(data.text_descriptions[nid], model=model_sbert),
+                            dtype=torch.float32,
                         ).to(device)
                         demo_nodes = prompt_buffer.get_k_combined(
-                            query_idx=nid, 
-                            text_emb=emb_text, 
-                            struct_embs=data.struct_embs, 
-                            k=K, 
-                            buffer_alpha=buffer_alpha
+                            query_idx=nid,
+                            text_emb=emb_text,
+                            struct_embs=data.struct_embs,
+                            k=K,
+                            buffer_alpha=buffer_alpha,
                         )
                         demo_nodes_ids = [e.node_idx for e in demo_nodes]
                         examples_block = format_example_block(
-                            demo_nodes_ids, meta_by_node, params["data"],
-                            hist=hist_dict, hist_max_steps=int(params.get("hist_max_steps",3))
+                            demo_nodes_ids,
+                            meta_by_node,
+                            params["data"],
+                            hist=hist_dict,
+                            hist_max_steps=int(params.get("hist_max_steps", 3)),
                         )
                         prompt_txt = build_full_prompt_for_node(
                             nid, data, examples_block, params["data"]
@@ -301,10 +318,25 @@ def run(
             emb_list = [model_sbert.encode(txt) for txt in data.text_descriptions]
             data.x = torch.tensor(emb_list, dtype=torch.float32)
 
-            # Evaluate snapshot and append train history
-            snap = eval_snapshot(task_model, data, split, params["data"])
-            append_history_jsonl(hist_jsonl, iteration=it, snapshot=snap, train_idx_set=train_idx_set)
+            # Train on new descriptions, Evaluate snapshot and append train history
+            print("[GLOBAL-REWRITE] Training on rewritten descriptions...")
+            optimizer = AdamW(
+                task_model.parameters(), lr=params["lr"], weight_decay=params["decay"]
+            )
+            stopper = EarlyStopping(patience=params["early_stop"])
+            for epoch in range(1, params["epochs"] + 1):
+                loss = train_gnn(task_model, data, split, optimizer, params)
+                result = eval_gnn(task_model, data, split, params)
 
+                is_stop = stopper(result)
+                
+                if is_stop:
+                    print("Early Stopping at Epoch:", epoch)
+                    break
+            snap = eval_snapshot(task_model, data, split, params["data"])
+            append_history_jsonl(
+                hist_jsonl, iteration=it, snapshot=snap, train_idx_set=train_idx_set
+            )
 
         print("[GLOBAL-REWRITE] Done.")
 

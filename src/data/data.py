@@ -52,14 +52,15 @@ def get_appended_text(data_name, data, params):
         # Combine texts
     texts = []
     template = 'The node type is {}. The node description is {}. The additional node description is {}.'
-    for i in range(len(data.text_descriptions)):
-        t = default_text[i] if data_name in ['cora', 'pubmed'] else 'na'
-        add_t = data.text_descriptions[i]
-        texts.append(template.format(node_types[data_name], t, add_t))
     if params['desc_mode'] == 'llm_only':
         texts = data.text_descriptions
     elif params['desc_mode'] == 'orig_only':
         texts = default_text
+    else:
+        for i in range(len(data.text_descriptions)):
+            t = default_text[i] if data_name in ['cora', 'pubmed'] else 'na'
+            add_t = data.text_descriptions[i]
+            texts.append(template.format(node_types[data_name], t, add_t))
 
     print(f"Desc mode: {params['desc_mode']}")
     print("Example node text: \n", texts[0]) # print first text for debugging
@@ -104,7 +105,7 @@ def citation_graph(params, dataset_name):
     data.text_descriptions = df['answer'].tolist()
 
     texts, default_text = get_appended_text(dataset_name, data, params)
-    data.text_descriptions = default_text
+    data.text_descriptions = texts
 
     sbert = SentenceTransformer(SBERT_MODELS[params["emb_model"]])
     new_embs = [sbert.encode(txt) for txt in texts]

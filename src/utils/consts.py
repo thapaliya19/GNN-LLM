@@ -92,7 +92,10 @@ Rewrite the description of the target node so that:
 
 ### Target Node
 **Original Description:**
-{current_node_description}
+{original_description}
+
+**Topological Summary:**
+{topo}
 
 ---
 
@@ -124,13 +127,15 @@ Original Description:
 Topological Summary:
 {topo}
 
-### Retrieved Similar Nodes (for reference only)
+### The following are some example nodes in the training set that you can use for reference only to understand how different text descriptions perform under the GNN.
 {examples_block}
 
 ### Instructions
 - Rewrite the target node's description so it is clearer, more informative, and discriminative.
+- Use the provided original description if available; otherwise, synthesize a meaningful description from the topology and neighbor summaries.
+- Use the example nodes as guidance.
 - Use ONLY the provided inputs (do not invent labels).
-- Keep style natural; ≤ 200 words.
+- Keep style natural; write in less than 200 words.
 
-**Final Output (one paragraph, no bullet points, ≤200 words):**
+**Final Output (one paragraph, no bullet points, less than 200 words):**
 """

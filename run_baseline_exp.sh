@@ -14,13 +14,14 @@ dataset=$2
 setting=$3
 iter=$4
 tta_seed=$5
+buffer_alpha=$6
 # drop $1 and $2, everything else is node_texts
-node_texts=( "${@:6}" )
+node_texts=( "${@:7}" )
 
 echo "Running seed=${seed} on $(hostname)"
 echo "Node‐texts: ${node_texts[*]}"
 
-mkdir -p ${dataset}_logs_iter_0
+mkdir -p ${dataset}_logs_iter_${iter}
 
 nvidia-smi
 
@@ -45,11 +46,9 @@ python autoprompt.py \
   --buffer_size 20 \
   --buffer_k 5 \
   --tta_max_iters 5 \
-  --entropy_thr ${entropy_thr} \
   --struct_epochs 20 \
   --demos_method combined \
   --buffer_alpha ${buffer_alpha} \
-  --embed_alpha ${embed_alpha} \
   --tta_topk 0 \
   --desc_mode orig_only \
   --output_dir output_ratio_iters 

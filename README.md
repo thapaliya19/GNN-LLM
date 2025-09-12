@@ -8,6 +8,9 @@ Download and extract the dataset from the following link inside the `datasets` f
 
 [download link for dataset](https://uconn-my.sharepoint.com/:f:/g/personal/ldn24004_uconn_edu/EpVCrbZuoSBLsB-l_VMEs60BNfwekvrpPK9l9pZp8h76xw?e=bNNgLG)
 
+## Install OLLAMA for locally running LLMs
+Use the download instructions [from the Ollama download webpage.](https://ollama.com/download/linux)
+
 ## Run auroprompting pipeline
 
 Run the autoprompt.sh file with the following arguments:

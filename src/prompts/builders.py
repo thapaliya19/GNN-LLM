@@ -32,9 +32,10 @@ def format_exemplar_history(nid, hist_dict, dataset, max_steps=3):
     lines = ["  History of predictions for this node in different iterations (most recent first):"]
     for h in reversed(H):
         lines.append(
-            f"   - iter {h['iter']}: pred={label_name(dataset, h['pred_label'])}, "
+            f"   - In iter {h['iter']}: \nThe text description used for this node: {h['text_description']} "
+            f"Predicted label ={label_name(dataset, h['pred_label'])}, "
+            f"which {'is correct' if h['pred_label']==h['true_label'] else 'wrong'} "
             f"top_prob={h['top_prob']:.2f}, entropy={h['entropy']:.3f}, "
-            f"correct={'Yes' if h['pred_label']==h['true_label'] else 'No'}"
         )
     return "\n".join(lines) + "\n"
 
@@ -146,6 +147,7 @@ def eval_snapshot(model, data, split, dataset):
                 "entropy": float(e),
                 "top_prob": float(max(pl)),
                 "probs": [float(x) for x in pl],
+                "text_description": data.text_descriptions[i],
             }
         )
     return out

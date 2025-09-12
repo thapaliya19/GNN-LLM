@@ -57,7 +57,7 @@ python autoprompt.py \
   --llm gemma3-12b \
   --temperature 0.1 \
   --buffer_size 20 \
-  --buffer_k 5 \
+  --buffer_k 10 \
   --struct_epochs 20 \
   --demos_method combined \
   --buffer_alpha ${buffer_alpha} \
