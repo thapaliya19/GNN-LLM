@@ -12,9 +12,9 @@ set -euxo pipefail
 seed=$1
 dataset=$2
 setting=$3
-iter=$4
-tta_seed=$5
-buffer_alpha=$6
+exp_slug=$4
+iter=$5
+tta_seed=$6
 # drop $1 and $2, everything else is node_texts
 node_texts=( "${@:7}" )
 
@@ -39,7 +39,7 @@ python autoprompt.py \
   --backbone gcn \
   --node_text ${node_texts[@]} \
   --seed ${seed} \
-  --desc_csv /home/ldn24004/autoprompt/output_ratio_iters/${dataset}/gemma3-12b/global_rewrite_iter${iter}_${dataset}_gemma3-12b_seed_${tta_seed}.csv \
+  --desc_csv /home/ldn24004/autoprompt/runs/${exp_slug}/${dataset}/gemma3-12b/global_rewrite_iter${iter}_${dataset}_gemma3-12b_seed_${tta_seed}.csv \
   --topo_csv /home/ldn24004/autoprompt/datasets/response/${setting}/${dataset}/topo_features.csv \
   --llm gemma3-12b \
   --temperature 0.1 \
@@ -48,10 +48,9 @@ python autoprompt.py \
   --tta_max_iters 5 \
   --struct_epochs 20 \
   --demos_method combined \
-  --buffer_alpha ${buffer_alpha} \
   --tta_topk 0 \
-  --desc_mode orig_only \
-  --output_dir output_ratio_iters 
+  --desc_mode llm_only \
+  --output_dir runs 
 
 EXIT_CODE=$?
 

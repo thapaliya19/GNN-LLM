@@ -241,7 +241,7 @@ def get_args():
     parser.add_argument(
         "--desc_mode",
         type=str,
-        default="both",
+        default="orig_only",
         choices=["both", "llm_only", "orig_only"],
         help="Mode for using node descriptions: 'both' for LLM and original, 'llm_only' for LLM only, 'orig_only' for original only",
     )

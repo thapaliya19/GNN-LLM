@@ -1,76 +1,78 @@
 #!/bin/bash
-#SBATCH -C gpu
-#SBATCH --partition=general-gpu
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=8
-#SBATCH --time=24:00:00
-#SBATCH --array=1-{{N}}%8          # set N in submitter script
-#SBATCH --job-name=grid
-#SBATCH --output=grid_logs/%x_%A_%a.out
-#SBATCH --error=grid_logs/%x_%A_%a.err
+# This file is the *payload* of each job. Resource flags are passed from the submitter.
+# You can add SBATCH defaults here if you want, but CLI args from the submitter override them.
 
 set -euxo pipefail
-MANIFEST="scripts/manifest.tsv"
-IDX=${SLURM_ARRAY_TASK_ID}
 
-mkdir -p grid_logs ollama_logs
+# Required env vars (exported by the submitter)
+: "${DATASET:?}" "${SEED:?}" "${EX_BLOCK_TEMPLATE:?}" "${SIM_METHOD:?}" "${BUFFER_K:?}"
+: "${SETTING:?}" "${NODE_TEXT:?}"
+: "${OUTPUT_ROOT:?}" "${LOG_ROOT:?}" "${GROUP:?}" "${BUFFER_ALPHA:?}"
 
-# parse the TSV row (skip header)
-LINE=$(sed -n "$((IDX+1))p" "$MANIFEST")
-IFS=$'\t' read -r dataset seed ex_block_template sim_method buffer_k setting node_text <<<"$LINE"
+# Human-readable slug to isolate outputs
+EXP_SLUG="${DATASET}-gemma3-12b-eb:${EX_BLOCK_TEMPLATE}-sim:${SIM_METHOD}-bk:${BUFFER_K}-ba:${BUFFER_ALPHA}-seed:${SEED}"
 
-# node_text 'title+abstract' → bash array ["title","abstract"]
-IFS='+' read -r -a NODE_TEXT_ARR <<< "$node_text"
+OUT_DIR="${OUTPUT_ROOT}/${EXP_SLUG}"
+RUN_LOG_DIR="${LOG_ROOT}/${EXP_SLUG}"
+mkdir -p "${OUT_DIR}" "${RUN_LOG_DIR}" ollama_logs
 
-# optional: unique port per task to avoid Ollama collision
+# Also mirror stdout/err to a per-run file (Slurm will write to --output/--error too)
+exec > >(tee -a "${RUN_LOG_DIR}/seed_${SEED}_${SLURM_JOB_ID}.out") 2> >(tee -a "${RUN_LOG_DIR}/seed_${SEED}_${SLURM_JOB_ID}.err" >&2)
+
+# Unique Ollama port per job (avoid collisions)
 BASE_PORT=11434
-PORT=$(( BASE_PORT + IDX ))
+PORT=$(( BASE_PORT + SLURM_JOB_ID % 10000 ))
 export OLLAMA_HOST="http://127.0.0.1:${PORT}"
-
-# start Ollama (comment out if not needed for this run)
-ollama serve &> "ollama_logs/ollama_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID}.log" &
+echo "Starting Ollama server..."
+ollama serve &> "ollama_logs/ollama_${SLURM_JOB_ID}.log" &
 OLLAMA_PID=$!
 sleep 10
 
-source ~/miniconda3-10/etc/profile.d/conda.sh
-conda activate base
-nvidia-smi
 
-# datasets -> paths
-if [[ "$dataset" == "cora" || "$dataset" == "pubmed" ]]; then
+# Activate your environment (adjust if you use modules instead)
+if [[ -f ~/miniconda3-10/etc/profile.d/conda.sh ]]; then
+  source ~/miniconda3-10/etc/profile.d/conda.sh
+  conda activate base
+fi
+
+nvidia-smi || true
+
+# Map dataset to response dir
+if [[ "${DATASET}" == "cora" || "${DATASET}" == "pubmed" ]]; then
   setting_dir="text_rich"
 else
   setting_dir="text_free"
 fi
 
+# Convert NODE_TEXT "title_abstract" → bash array ["title","abstract"]
+if [[ "${NODE_TEXT}" == *"_"* ]]; then
+  IFS='_' read -r -a NODE_TEXT_ARR <<< "${NODE_TEXT}"
+else
+  NODE_TEXT_ARR=("${NODE_TEXT}")
+fi
+
 python autoprompt.py \
   --use_params \
-  --data "$dataset" \
+  --data "${DATASET}" \
   --label_setting ratio \
-  --train_num 20 --val_num 30 \
   --emb_method TTA \
   --backbone gcn \
   --node_text "${NODE_TEXT_ARR[@]}" \
-  --seed "$seed" \
-  --desc_csv "/home/ldn24004/autoprompt/datasets/response/${setting_dir}/${dataset}/answer_gemma3-12b_TANS.csv" \
-  --topo_csv "/home/ldn24004/autoprompt/datasets/response/${setting_dir}/${dataset}/topo_features.csv" \
+  --seed "${SEED}" \
+  --desc_csv "/home/ldn24004/autoprompt/datasets/response/${setting_dir}/${DATASET}/answer_gemma3-12b_TANS.csv" \
+  --topo_csv "/home/ldn24004/autoprompt/datasets/response/${setting_dir}/${DATASET}/topo_features.csv" \
   --llm gemma3-12b \
-  --temperature 0.1 \
-  --buffer_size 20 \
-  --buffer_k "$buffer_k" \
-  --struct_epochs 20 \
-  --sim_method "$sim_method" \
-  --tta_topk 0 \
-  --desc_mode orig_only \
-  --output_dir output_ratio_iters \
+  --buffer_k "${BUFFER_K}" \
+  --sim_method "${SIM_METHOD}" \
+  --ex_block_template "${EX_BLOCK_TEMPLATE}" \
+  --buffer_alpha "${BUFFER_ALPHA}" \
   --rewrite_all \
   --rewrite_iters 2 \
-  --group "grid_${dataset}" \
-  --ex_block_template "$ex_block_template"
+  --struct_epochs 20 \
+  --desc_mode orig_only \ 
+  --output_dir "${OUT_DIR}" \
+  --group "${GROUP}"
 
-EXIT_CODE=$?
-
-kill $OLLAMA_PID || true
-exit $EXIT_CODE
+CODE=$?
+kill ${OLLAMA_PID} || true
+exit ${CODE}
