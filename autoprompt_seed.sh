@@ -12,9 +12,11 @@ set -euxo pipefail
 seed=$1
 dataset=$2
 setting=$3
-buffer_alpha=$4
+buffer_k=$4
+sim_method=$5
+ex_block_template=$6
 # drop $1 and $2, everything else is node_texts
-node_texts=( "${@:5}" )
+node_texts=( "${@:7}" )
 
 echo "Running seed=${seed} on $(hostname)"
 echo "Node‐texts: ${node_texts[*]}"
@@ -46,8 +48,6 @@ python autoprompt.py \
   --use_params \
   --data ${dataset} \
   --label_setting ratio \
-  --train_num 20 \
-  --val_num 30 \
   --emb_method TTA \
   --backbone gcn \
   --node_text ${node_texts[@]} \
@@ -55,17 +55,16 @@ python autoprompt.py \
   --desc_csv /home/ldn24004/autoprompt/datasets/response/${setting}/${dataset}/answer_gemma3-12b_TANS.csv \
   --topo_csv /home/ldn24004/autoprompt/datasets/response/${setting}/${dataset}/topo_features.csv \
   --llm gemma3-12b \
-  --temperature 0.1 \
-  --buffer_size 20 \
-  --buffer_k 10 \
+  --buffer_k ${buffer_k} \
   --struct_epochs 20 \
   --demos_method combined \
-  --buffer_alpha ${buffer_alpha} \
-  --tta_topk 0 \
   --desc_mode orig_only \
   --output_dir output_ratio_iters \
   --rewrite_all \
-  --rewrite_iters 5 
+  --rewrite_iters 2 \
+  --ex_block_template "${ex_block_template}" \
+  --sim_method ${sim_method} \
+  --group grid_${dataset}_seed${seed}
 
 EXIT_CODE=$?
 

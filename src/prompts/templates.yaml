@@ -1,0 +1,24 @@
+templates:
+  default: |
+    You are rewriting node descriptions to improve performance of a graph-based classifier.
+    Each node is from a {graph_type}.
+
+    ### Target Node
+    Original Description:
+    {original_description}
+
+    Topological Summary:
+    {topological_description}
+
+    ### The following are some example nodes in the training set that you can use for reference only to understand how different text descriptions perform under the GNN.
+    {examples_block}
+
+    ### Instructions
+    - Rewrite the target node's description so it is clearer, more informative, and discriminative.
+    - Use the provided original description if available; otherwise, synthesize a meaningful description from the topology and neighbor summaries.
+    - Use the example nodes as guidance.
+    - Use ONLY the provided inputs (do not invent labels).
+    - Keep style natural; write in less than 200 words.
+
+    Provide the updated descriptions in one paragraph, no bullet points, less than 200 words.
+  

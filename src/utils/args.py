@@ -267,7 +267,7 @@ def get_args():
     parser.add_argument("--retrieval_beta", type=float, default=0.5,
                         help="Reliability weight mixing coefficient for (score + beta*reliability).")
 
-    parser.add_argument("--rewrite_iters", type=int, default=1,
+    parser.add_argument("--rewrite_iters", type=int, default=2,
                         help="Number of global rewrite iterations.")
     parser.add_argument("--hist_max_steps", type=int, default=3,
                         help="How many recent history steps per exemplar to include in prompts.")
@@ -277,5 +277,15 @@ def get_args():
         default=64,
         help="Batch size for the global rewrite stage; results are saved after every batch to support resume."
     )
+
+    parser.add_argument("--sim_method", type=str, default="weighted_sum", choices=[
+        "text_only", "struct_only", "weighted_sum", "max", "product", "concat_cosine"
+    ], help="Similarity method for retrieving from the prompt buffer.")
+
+    parser.add_argument("--ex_block_template", type=str, default="default",
+                    help="Name of example-block template from example_blocks.yaml")
+    parser.add_argument("--ex_block_yaml", type=str, default=None,
+                    help="Path to YAML file with example block templates & history (defaults to src/prompts/example_blocks.yaml)")
+
     args = parser.parse_args()
     return vars(args)

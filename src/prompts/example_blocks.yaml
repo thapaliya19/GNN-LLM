@@ -1,0 +1,39 @@
+# Defaults applied to all templates unless overridden per-template
+defaults:
+  include_history: false         # can be overridden by each template
+  history_attach: per_example    # per_example | after_block | none
+  history:
+    max_steps: 3
+    header: "History of predictions for this node (most recent first):"
+    # You can remove parts (e.g., {text_description}) if you don’t want them
+    item: " - Iter {iter}: pred={pred_label_name} ({correctness}), top_prob={top_prob:.2f}, entropy={entropy:.3f}\n   Text used: {text_description}"
+    # If you want to hide the text line, set item to: " - Iter {iter}: pred={pred_label_name} ({correctness}), top_prob={top_prob:.2f}, entropy={entropy:.3f}"
+
+example_block_templates:
+  default:
+    include_history: true
+    history_attach: per_example
+    body: |
+        Example Node: {item_number}
+        Original Description: {original_description}
+        Topological Summary: {topological_description}
+        Ground Truth Label: {gt_label}
+        GNN Prediction: {gnn_pred}
+        Class Probabilities for GNN prediction: {class_probs}
+
+  no_pred:
+    include_history: false
+    history_attach: none
+    body: |
+        Example Node: {item_number}
+        Original Description: {original_description}
+        Topological Summary: {topological_description}
+        Ground Truth Label: {gt_label}
+  
+  terse:
+    include_history: true
+    history_attach: after_block
+    body: |
+      #{item_number} | {gt_label} | {gnn_pred}
+      Desc: {original_description}
+      Topo: {topological_description}

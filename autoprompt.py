@@ -11,34 +11,29 @@ from sentence_transformers import SentenceTransformer
 from torch.optim import AdamW
 
 import wandb
+from src.data.data import get_data
+from src.data.split import get_split
 from src.embeddings.structural import train_node2vec
+from src.embeddings.text import embed_text
+from src.model.llm_client_ollama import LLMClientOllama
+from src.model.model import GNN
 from src.prompts.builders import (
     append_history_jsonl,
-    build_full_prompt_for_node,
+    build_full_prompt_for_node_with_template,
     dump_train_pred_json,
     eval_snapshot,
     format_example_block,
     load_buffer_from_json,
     load_history,
 )
-from src.data.data import get_data
-from src.data.split import get_split
-from src.model.llm_client_ollama import LLMClientOllama
-from src.model.model import GNN
-from src.utils.args import get_args
-from src.utils.consts import (
-    SBERT_MODELS,
-)
-from src.utils.early_stop import EarlyStopping
-from src.utils.logger import Logger
-from src.utils.utils import (
-    flip_edges,
-    get_device,
-    seed_everything,
-)
 from src.training.evaluator import eval_gnn
 from src.training.trainer import train_gnn
-from src.embeddings.text import embed_text
+from src.utils.args import get_args
+from src.utils.consts import SBERT_MODELS
+from src.utils.early_stop import EarlyStopping
+from src.utils.logger import Logger
+from src.utils.utils import get_device, seed_everything
+
 
 
 def main():
@@ -72,16 +67,22 @@ def main():
         # simply print or return the key metrics
         print(f"SWEEP METRICS → best_val={metrics['best_val']:.4f}")
         return
+    
+    import subprocess
+    def _git_rev():
+        try:
+            return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
+        except Exception:
+            return "unknown"
+        
+    template_name = params.get("prompt_template", "default")
+        
     wandb.init(
         project="TTA",
-        name="Data:{} | Backbone:{} | LLM:{} | EMB_METHOD: {}".format(
-            params["data"], params["backbone"], params["llm"], emb_method
-        ),
-        config=params,
-        mode=(
-            "disabled" if params["debug"] else "online"
-        ),  # sweep only works in online mode
-        group=params["group"],
+        name=f"Data:{params['data']}|Backbone:{params['backbone']}|LLM:{params['llm']}|EMB:{emb_method}|PT:{template_name}",
+        config={**params, "git_rev": _git_rev(), "prompt_template": template_name},
+        mode=("disabled" if params["debug"] else "online"),
+        group=params.get("group"),
     )
     params = dict(wandb.config)
 
@@ -95,6 +96,7 @@ def run(
 ):
     seed = params["seed"]
     device = get_device(params)
+
 
     graph = get_data(params, params["data"])
     split = get_split(graph.y, params)  # returns a dict, not a list
@@ -128,20 +130,6 @@ def run(
     print(f"All outputs will be saved to {out_dir}")
 
     data = copy.deepcopy(graph)
-
-    # if params["feat_noise"] != 0:
-    #     data.x = (1 - params["feat_noise"]) * data.x + params[
-    #         "feat_noise"
-    #     ] * torch.randn_like(data.x)
-    #     print(
-    #         "Add Gaussian noise on nodes with level {} on target!".format(
-    #             params["feat_noise"]
-    #         )
-    #     )
-
-    # if params["edge_noise"] != 0:
-    #     data = flip_edges(data, p=params["edge_noise"])
-    #     print("Randomly flip {} edges on target!".format(params["edge_noise"]))
 
     task_model = copy.deepcopy(model).to(device)
 
@@ -196,10 +184,14 @@ def run(
 
         # Build prompt buffer from training JSON
         prompt_buffer, meta_by_node = load_buffer_from_json(
-            buffer_json,
+            train_json_path,
             model_sbert,
-            device=torch.device("cpu"),  # store SBERT embeddings on CPU
+            device=torch.device("cpu"),
+            struct_embs=data.struct_embs,  
+            sim_method=params.get("sim_method", "weighted_sum"),  
         )
+
+        prompt_buffer.set_method(params.get("sim_method", "weighted_sum"))
 
         # Output paths after each iteration of rewriting
         global_csv_tmpl = osp.join(
@@ -216,6 +208,9 @@ def run(
 
         # Iterate to rewrite the entire dataset
         I = int(params.get("rewrite_iters", 1))
+
+        template_name = params.get("prompt_template", "default")
+
         for it in range(I):
             global_csv = global_csv_tmpl.format(it=it)
             print(f"[GLOBAL-REWRITE] >>> Iteration {it+1}/{I} writing to {global_csv}")
@@ -282,11 +277,13 @@ def run(
                             demo_nodes_ids,
                             meta_by_node,
                             params["data"],
-                            hist=hist_dict,
-                            hist_max_steps=int(params.get("hist_max_steps", 3)),
+                            hist=hist_dict,  # history will be included/placed per YAML unless you override max steps below
+                            hist_max_steps=params.get("hist_max_steps", None),  # leave None to use YAML; set an int to override
+                            template_name=params.get("ex_block_template", "default"),
+                            yaml_path=params.get("ex_block_yaml", None),
                         )
-                        prompt_txt = build_full_prompt_for_node(
-                            nid, data, examples_block, params["data"]
+                        prompt_txt = build_full_prompt_for_node_with_template(
+                            nid, data, examples_block, params["data"], template_name
                         )
                         prompts.append(prompt_txt)
 
@@ -329,7 +326,7 @@ def run(
                 result = eval_gnn(task_model, data, split, params)
 
                 is_stop = stopper(result)
-                
+
                 if is_stop:
                     print("Early Stopping at Epoch:", epoch)
                     break

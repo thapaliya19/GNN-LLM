@@ -5,30 +5,13 @@ metric:
   name: best/val          # the key we just added
   goal: maximize
 
-parameters:
-  # ---------- fixed experiment basics ----------
-  data:
-    value: cora
-  hidden_dim:
-    values: [8, 16, 32, 64, 128, 256]
-  decay:
-    distribution: uniform 
-    min: 0.0
-    max: 0.0005
-  dropout:
-    values: [0.0, 0.1, 0.5, 0.8]     # small-data regularisation
-  lr:
-    distribution: uniform
-    min: 0.001
-    max: 0.05
-  normalize:
-    values: [none, batchnorm]
-  num_layers:
-    values: [1, 2, 3]             # number of GNN layers
-  seed: 
-    values: [1,2,3,4,5,6,7,8,9,10]
 
-  # rest of the parameters are fixed
+parameters:
+  # parameters are fixed
+  data: 
+    value: cora
+  seed: 
+    value: 1
   label_setting:
     value: ratio
   emb_method:
@@ -42,7 +25,19 @@ parameters:
   desc_csv:
     value: /home/ldn24004/autoprompt/output_ratio/cora/gemma3-12b/global_rewrite_cora_gemma3-12b_seed_1.csv
   desc_mode:
-    value: llm_only
+    value: orig_only
   topo_csv:
     value: /home/ldn24004/autoprompt/datasets/response/text_rich/cora/topo_features.csv 
   
+  prompt_template:
+    value: default
+
+  # parameters to sweep over
+  rewrite_iters:
+    values: [1, 2, 3]
+  sim_method:
+    values: [weighted_sum, concat_cosine, max, product, text_only, struct_only]
+  buffer_k:
+    values: [5, 10, 15, 20]
+  ex_block_template:
+    values: [default, no_pred, terse]
