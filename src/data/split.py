@@ -19,8 +19,12 @@ def get_split(label, params):
     Expects params['seed'] to be an int.
     """
     # set the random seed for reproducibility
-    np.random.seed(42)
-    torch.manual_seed(42)
+    # np.random.seed(42)
+    # torch.manual_seed(42)
+
+    # NOTE: remove this seed below, just checking to see brazil results in low level settings
+    np.random.seed(params['seed'])
+    torch.manual_seed(params['seed'])
 
     if params['label_setting'] == 'ratio':
         return ratio_split(label, params['train_ratio'], params['val_ratio'])

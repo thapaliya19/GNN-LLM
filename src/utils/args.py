@@ -1,5 +1,5 @@
 import argparse
-from src.utils.consts import LLM_AVAILABLE_OLLAMA as LLM_AVAILABLE
+from src.utils.consts import LLM_AVAILABLE_OLLAMA, LLM_AVAILABLE_OPENAI
 
 
 def get_args():
@@ -19,6 +19,13 @@ def get_args():
         type=str,
         default="none",
         help="Path to the CSV file containing topological features",
+    )
+
+    parser.add_argument("--tgt_desc_csv", type=str, default="none")
+    parser.add_argument(
+        "--tgt_topo_csv",
+        type=str, default="none",
+        help="Path to the CSV file containing topological features for the target dataset",
     )
 
     parser.add_argument("--seed", type=int, default=1)
@@ -53,7 +60,10 @@ def get_args():
 
     # LLM Config
     parser.add_argument(
-        "--llm", type=str, default="gemma3-1b", choices=LLM_AVAILABLE.keys()
+        "--llm", type=str, default="gemma3-1b", choices=list(LLM_AVAILABLE_OLLAMA.keys()) + list(LLM_AVAILABLE_OPENAI.keys())
+    )
+    parser.add_argument(
+        "--system_prompt", type=str, default="You are a helpful assistant in graph learning and graph theory.", help="Optional system prompt for LLM"
     )
     parser.add_argument(
         "--temperature", type=float, default=0.0, help="Temperature for LLM sampling"
@@ -151,6 +161,9 @@ def get_args():
     )
 
     # Structural (Node2Vec) Embedding Config
+    parser.add_argument(
+        "--struct_method", type=str, default="node2vec", choices=["node2vec", "deepwalk", "struct2vec"]
+    )
     parser.add_argument(
         "--struct_dim", type=int, default=128, help="Dimension of structural embedding"
     )

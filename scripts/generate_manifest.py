@@ -10,11 +10,11 @@ seed_map = {
 }
 
 buffer_alpha_map = {
-    "cora": 0.8,
-    "pubmed": 0.5,
-    "usa": 0.5,
+    "cora": 0.8, 
+    "pubmed": 0.8,
+    "usa": 0.7,
     "europe": 0.7,
-    "brazil": 0.5,
+    "brazil": 0.7,
 }
 
 

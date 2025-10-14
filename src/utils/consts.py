@@ -3,6 +3,10 @@ LLM_AVAILABLE_OLLAMA = {
     "gemma3-12b": "gemma3:12b",
 }
 
+LLM_AVAILABLE_OPENAI = {
+    'gpt-4o-mini': 'gpt-4o-mini',
+}
+
 LLM_AVAILABLE_VLLM = {
     "gemma3-1b": "google/gemma-3-1b-it",
     "gemma3-12b": "google/gemma-3-12b-it",
@@ -46,10 +50,10 @@ PUBMED_ID2LABEL = {
 AIRPORT_ID2LABEL = {
     # these activity labels are generated using ChatGPT by giving description of the label values from paper
     # Paper used to get descriptions of label: https://arxiv.org/pdf/1704.03165
-    0: "Low Activity (Quartile 1 — bottom 25%)",
-    1: "Medium-Low Activity (Quartile 2 — 25-50%)",
-    2: "Medium-High Activity (Quartile 3 — 50-75%)",
-    3: "High Activity (Quartile 4 — top 25%)"
+    0: "Low Activity",
+    1: "Medium-Low Activity",
+    2: "Medium-High Activity",
+    3: "High Activity"
 }
 
 

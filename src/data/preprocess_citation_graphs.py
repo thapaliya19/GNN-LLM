@@ -16,10 +16,6 @@ def parse_args():
                         help='dataset name')
     parser.add_argument('--setting', type=str, default='text_limit', choices=['text_limit', 'text_rich'],
                         help='text setting')
-    parser.add_argument('--without_neigh', action='store_true',
-                        help='exclude neighbor connectivity information')
-    parser.add_argument('--num_neighbor', type=int, default=5,
-                        help='number of neighbors to show')
     
     return parser.parse_args()
 
@@ -37,16 +33,9 @@ graph_stats = {
                'total_node': 19717, 'total_edge': 44324},
 }
 
-classes = {
-    'cora': ['Case Based', 'Genetic Algorithms', 'Neural Networks', 'Probabilistic Methods', 'Reinforcement Learning',
-             'Rule Learning', 'Theory'],
-    'pubmed': ['Diabetes Mellitus Type 1', 'Diabetes Mellitus Type 2', 'Experimental Diabetes'],
-}
 
 template = {
     'base': "Given a node from a {} graph, where the node type is {} with {} nodes, and the edge type is {} with {} edges. ",
-    'node_text': 'The textual node name is {}. The node description is {}. ',
-    'connectivity': 'One similar node has name {}, and the description is {}. ',
     'property': 'The value of property "{}" is {:.4f}, ranked at {} among {} nodes. ',
 }
 
@@ -60,17 +49,6 @@ def load_data(args):
     return names, descriptions
 
 
-def get_similar_nodes(args):
-    """Get similar nodes for each node"""
-    one_hop_neighs = np.load(osp.join(osp.dirname(__file__), f'../../datasets/property/{args.data_name}_one_hop.npy'),
-                             allow_pickle=True).item()
-    similar_nodes = {}
-    for node, neighs in one_hop_neighs.items():
-        if len(neighs) <= args.num_neighbor:
-            similar_nodes[node] = neighs
-        else:
-            similar_nodes[node] = np.random.choice(neighs, args.num_neighbor, replace=False)
-    return similar_nodes
 
 
 def process_topological_features(args):
@@ -111,7 +89,7 @@ def process_topological_features(args):
     return new_topo_features
 
 
-def generate_text(node, methods, names, descriptions, similar_nodes, args):
+def generate_text(node, methods, names, descriptions, args):
 
     """Generate text description for a single node"""
     text = template['base'].format(
@@ -122,13 +100,6 @@ def generate_text(node, methods, names, descriptions, similar_nodes, args):
         graph_stats[args.data_name]['total_edge']
     )
 
-    text += template['node_text'].format(names[node], descriptions[node])
-
-    if not args.without_neigh:
-        text += 'The following are the connectivity information of the similar nodes: '
-        for similar_node in similar_nodes[node]:
-            text += template['connectivity'].format(names[similar_node], descriptions[similar_node])
-
     for method, (value, rank) in methods.items():
         text += template['property'].format(method, value, rank, graph_stats[args.data_name]['total_node'])
 
@@ -137,7 +108,6 @@ def generate_text(node, methods, names, descriptions, similar_nodes, args):
 def main():
     args = parse_args()
     names, descriptions = load_data(args)
-    similar_nodes = get_similar_nodes(args)
     topo_features = process_topological_features(args)
 
     # Generate texts for all nodes with progress bar
@@ -145,7 +115,7 @@ def main():
 
     
     for node, methods in tqdm(topo_features.items(), desc="Generating texts", total=len(topo_features)):
-        texts.append(generate_text(node, methods, names, descriptions, similar_nodes, args))
+        texts.append(generate_text(node, methods, names, descriptions, args))
 
     # Create and save dataframe
     df = pd.DataFrame({
@@ -156,7 +126,7 @@ def main():
     save_dir = osp.join(osp.dirname(__file__), '../../datasets/response', args.setting, args.data_name)
     check_dir(save_dir)
 
-    topo_features_file = f'topo_features_wo_neigh.csv' if args.without_neigh else f'topo_features.csv'
+    topo_features_file =  'topo_features.csv'
 
     df[['node_idx', 'topo_features']].to_csv(osp.join(save_dir, topo_features_file), index=False)
 

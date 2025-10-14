@@ -1,4 +1,5 @@
 import copy
+import csv
 import os
 import os.path as osp
 from argparse import Namespace
@@ -6,6 +7,7 @@ from argparse import Namespace
 import pandas as pd
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import yaml
 from sentence_transformers import SentenceTransformer
 from torch.optim import AdamW
@@ -13,9 +15,10 @@ from torch.optim import AdamW
 import wandb
 from src.data.data import get_data
 from src.data.split import get_split
-from src.embeddings.structural import train_node2vec
+from src.embeddings.structural import train_structural_embeddings
 from src.embeddings.text import embed_text
 from src.model.llm_client_ollama import LLMClientOllama
+from src.model.llm_client_openai import LLMClientOpenAI
 from src.model.model import GNN
 from src.prompts.builders import (
     append_history_jsonl,
@@ -35,6 +38,45 @@ from src.utils.logger import Logger
 from src.utils.utils import get_device, seed_everything
 
 
+def load_done_rows_tsv(path: str) -> dict[int, str]:
+    """
+    Read existing rows (node_idx, answer) from a TSV file, returning {node_idx: answer}.
+    Skips empty/invalid rows. Safe to call if file doesn't exist.
+    """
+    done: dict[int, str] = {}
+    if not osp.exists(path):
+        return done
+    try:
+        with open(path, "r", newline="") as f:
+            reader = csv.DictReader(f, delimiter="\t")
+            for row in reader:
+                try:
+                    nid = int(row.get("node_idx", "").strip())
+                    ans = (row.get("answer") or "").strip()
+                    if ans:
+                        done[nid] = ans
+                except Exception:
+                    continue
+    except Exception:
+        # fall back silently; you can log if you want
+        pass
+    return done
+
+def append_row_tsv(path: str, nid: int, answer: str) -> None:
+    """
+    Append a single row (node_idx, answer) to TSV immediately and fsync for durability.
+    Creates header if the file didn't exist.
+    """
+    file_exists = osp.exists(path)
+    # ensure directory exists
+    os.makedirs(osp.dirname(path), exist_ok=True)
+    with open(path, "a", newline="") as f:
+        writer = csv.writer(f, delimiter="\t")
+        if not file_exists:
+            writer.writerow(["node_idx", "answer"])
+        writer.writerow([nid, answer])
+        f.flush()
+        os.fsync(f.fileno())
 
 def main():
     params = get_args()
@@ -98,7 +140,7 @@ def run(
     device = get_device(params)
 
 
-    graph = get_data(params, params["data"])
+    graph = get_data(params, params["data"], params['desc_csv'], params['topo_csv'])
     split = get_split(graph.y, params)  # returns a dict, not a list
 
     seed_everything(seed)
@@ -116,9 +158,16 @@ def run(
     logger = Logger()
 
     # initialize LLM client
-    llm_client = LLMClientOllama(
-        model_name=params["llm"],
-    )
+    if params['llm'].strip().lower().startswith("gpt-4o"):
+        llm_client = LLMClientOpenAI(
+            model_name=params['llm'],
+            temperature=float(params.get("temp", 0.0)),
+            max_output_tokens=int(params.get("max_output_tokens", 512)),
+            parallel_workers=int(params.get("parallel_workers", 4)),
+            system_prompt=params.get("system_prompt"),  # optional
+        )
+    else:
+        llm_client = LLMClientOllama(model_name=params['llm'])
     print(f"Using LLM: {params['llm']}")
 
     #  initialize transformer model for text embeddings
@@ -179,7 +228,7 @@ def run(
 
         # Ensure we have structural embeddings available for retrieval
         if not hasattr(data, "struct_embs"):
-            struct_embs = train_node2vec(data, params)
+            struct_embs = train_structural_embeddings(data, params)
             data.struct_embs = struct_embs
 
         # Build prompt buffer from training JSON
@@ -210,7 +259,10 @@ def run(
         I = int(params.get("rewrite_iters", 1))
 
         template_name = params.get("prompt_template", "default")
+        train_idx = split["train"].nonzero(as_tuple=False).view(-1)
+        val_idx   = split["val"].nonzero(as_tuple=False).view(-1)
 
+        cache = {}  # create once outside the rewrite loop and reuse
         for it in range(I):
             global_csv = global_csv_tmpl.format(it=it)
             print(f"[GLOBAL-REWRITE] >>> Iteration {it+1}/{I} writing to {global_csv}")

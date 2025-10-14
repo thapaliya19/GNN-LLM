@@ -7,10 +7,15 @@
 #SBATCH --gres=gpu:1                    # number of gpus
 #SBATCH --job-name=sweep               # job name
 #SBATCH --output=sweep-logs/%j/sweep-%j.out  # unique log directory per job
+#SBATCH --begin=2025-10-13T6:30:00
 
 # Number of agents to run
-NUM_AGENTS=4
-SWEEP_ID=thapaliya19/autoprompt/89s59aec  # Replace with your actual sweep ID
+sweep_id=$1
+NUM_AGENTS=$2
+SWEEP_ID=thapaliya19/autoprompt/$sweep_id  # Replace with your actual sweep ID
+
+export OPENAI_API_KEY="sk-proj-s6bnUu3_"
+
 
 # Create a unique log directory for this job
 LOG_DIR="sweep-logs/$SLURM_JOB_ID"

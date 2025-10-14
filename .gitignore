@@ -205,13 +205,14 @@ __marimo__/
 # SLURM log files
 *.out
 *.err
-*_logs*/
+*logs*/
 # any csv files present from dataset
 *.csv
 
 # datasets and output folder
 datasets/
 *output*/
+*runs*/
 
 # wandb
 wandb/

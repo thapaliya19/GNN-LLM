@@ -22,3 +22,22 @@ def train_gnn(model, data, split, optimizer, params):
     optimizer.step()
 
     return loss.item()
+
+def train_da(model, data, split, optimizer, params):
+    model.train()
+    device = get_device_from_model(model)
+
+    x = data.x.to(device)
+    edge_index = data.edge_index.to(device)
+    y = data.y.squeeze().to(device)
+
+    z = model.encode(x, edge_index)
+    y_pred = model.predict(z)
+
+    loss = F.cross_entropy(y_pred, y)
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+
+    return loss.item()

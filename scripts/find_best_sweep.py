@@ -1,17 +1,26 @@
-# pip install wandb pandas numpy scipy
-import wandb, pandas as pd, numpy as np
+import argparse
+import wandb
+import pandas as pd
+import numpy as np
 from scipy.stats import t
-import yaml
 
+# ---------------- Argument Parser ----------------
+parser = argparse.ArgumentParser(description="Aggregate W&B sweep results with seed coverage checking.")
+parser.add_argument("--entity", type=str, default="thapaliya19", help="W&B entity (user or org name)")
+parser.add_argument("--project", type=str, default="autoprompt", help="W&B project name")
+parser.add_argument("--sweep_id", type=str, required=True, help="W&B sweep ID (e.g., 'abc12345')")
+args = parser.parse_args()
 
-ENTITY = "thapaliya19"
-PROJECT = "autoprompt"
-SWEEP_ID = "yznpl2cd"  # e.g., "abc12345" from the sweep URL .../sweeps/abc12345
-# Optional: if you DON'T know SWEEP_ID but know its name, see the helper below.
+ENTITY = args.entity
+PROJECT = args.project
+SWEEP_ID = args.sweep_id
+# --------------------------------------------------
 
-# Required seed set & coverage threshold:
-REQUIRED_SEEDS = {1,2,3,4,5,6,7,8,9,10}     # exact seeds you intended
-MIN_COVERAGE = len(REQUIRED_SEEDS)  # require 5/5; will auto-fallback to 4/5 if none meet this
+print(f"Finding sweep: {ENTITY}/{PROJECT}/{SWEEP_ID}")
+
+# Required seed set & coverage threshold
+REQUIRED_SEEDS = set(range(1, 31))
+MIN_COVERAGE = len(REQUIRED_SEEDS)
 
 # Candidate metric keys to tolerate common logging variants
 METRIC_CANDIDATES = [
@@ -20,8 +29,9 @@ METRIC_CANDIDATES = [
     "test",
     "metrics/test",
 ]
+
 # Hyperparameters that define a "configuration" (exclude `seed`)
-GROUP_COLS = ["dropout","hidden_dim","normalize","num_layers"]
+GROUP_COLS = ["lr", "hidden_dim", "dropout", "decay", "normalize", "num_layers"]
 
 api = wandb.Api()
 sweep = api.sweep(f"{ENTITY}/{PROJECT}/{SWEEP_ID}")

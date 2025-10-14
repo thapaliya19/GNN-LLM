@@ -60,11 +60,11 @@ python autoprompt.py \
   --demos_method combined \
   --desc_mode orig_only \
   --output_dir output_ratio_iters \
-  --rewrite_all \
-  --rewrite_iters 2 \
   --ex_block_template "${ex_block_template}" \
   --sim_method ${sim_method} \
   --group grid_${dataset}_seed${seed}
+  # --rewrite_all \
+  # --rewrite_iters 2 \
 
 EXIT_CODE=$?
 

@@ -67,9 +67,9 @@ python autoprompt.py \
   --ex_block_template "${EX_BLOCK_TEMPLATE}" \
   --buffer_alpha "${BUFFER_ALPHA}" \
   --rewrite_all \
-  --rewrite_iters 2 \
+  --rewrite_iters 1 \
   --struct_epochs 20 \
-  --desc_mode orig_only \ 
+  --desc_mode orig_only \
   --output_dir "${OUT_DIR}" \
   --group "${GROUP}"
 
