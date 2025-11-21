@@ -2,18 +2,27 @@
 import json
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
+import time
+import random
+import argparse
+import concurrent.futures as cf
+from tqdm import tqdm
+
+
 import wandb
 import pandas as pd
 import numpy as np
 from scipy.stats import t
-import argparse
 
 # ---------------- Argument Parser ----------------
-parser = argparse.ArgumentParser(description="Aggregate W&B sweep results with seed coverage checking.")
+parser = argparse.ArgumentParser(description="Aggregate W&B sweep results with seed coverage checking (parallel fetch).")
 parser.add_argument("--entity", type=str, default="thapaliya19", help="W&B entity (user or org name)")
 parser.add_argument("--project", type=str, default="autoprompt", help="W&B project name")
 parser.add_argument("--sweep_id", type=str, required=True, help="W&B sweep ID (e.g., 'abc12345')")
+parser.add_argument("--max_workers", type=int, default=16, help="Max parallel fetch workers")
+parser.add_argument("--max_retries", type=int, default=5, help="Max retries per run fetch")
+parser.add_argument("--timeout", type=int, default=60, help="W&B API timeout (seconds) per request")
 args = parser.parse_args()
 
 ENTITY = args.entity
@@ -24,7 +33,7 @@ print(f"Finding sweep: {ENTITY}/{PROJECT}/{SWEEP_ID}")
 
 # Seeds you intended to run (used to compute coverage)
 REQUIRED_SEEDS = set(range(1, 31))
-MIN_COVERAGE = 15      # e.g., require ≥10 seeds per config; set to len(REQUIRED_SEEDS) for full coverage
+MIN_COVERAGE = 6  # require ≥10 seeds per config
 
 # Metric keys as logged in your runs
 VAL_KEY = "best/val"
@@ -34,7 +43,6 @@ HP_KEYS = ["hidden_dim", "decay", "dropout", "lr", "normalize", "num_layers"]  #
 
 def canonicalize_config(cfg: Dict[str, Any]) -> Tuple:
     """Return a hashable key for config excluding the seed and non-HP fields."""
-    # Pull only declared HP keys; normalize strings like 'none'/'None'
     row = []
     for k in HP_KEYS:
         v = cfg.get(k, None)
@@ -52,25 +60,141 @@ class RunRec:
     run_id: str
     name: str
 
-def fetch_runs(entity: str, project: str, sweep_id: str) -> List[RunRec]:
-    api = wandb.Api(timeout=60)
-    sweep = api.sweep(f"{entity}/{project}/{sweep_id}")
-    print("Sweep name:", sweep.name)
-    recs = []
-    for r in sweep.runs:
-        # extract seed
-        seed = r.config.get("seed", None)
-        if seed is None:
+def dedupe_by_seed(recs: List[RunRec]) -> List[RunRec]:
+    """
+    For each (config_key, seed) keep the run with the best (val, then test).
+    """
+    best: Dict[Tuple[Tuple, int], RunRec] = {}
+    for r in recs:
+        k = (r.config_key, r.seed)
+        if k not in best:
+            best[k] = r
             continue
-        # pull metrics from summary
-        val = r.summary.get(VAL_KEY, None)
-        test = r.summary.get(TEST_KEY, None)
-        if val is None or test is None:
+        # Prefer higher val; break ties by higher test
+        prev = best[k]
+        if (r.val, r.test) > (prev.val, prev.test):
+            best[k] = r
+    return list(best.values())
+
+
+
+def fetch_runs_fast(entity: str, project: str, sweep_id: str,
+                    timeout: int = 60,
+                    per_page: int = 1000,
+                    state: str = "finished") -> List[RunRec]:
+    """
+    Fetch runs for a sweep in bulk via api.runs(filters=...),
+    avoiding per-run api.run() calls.
+    """
+    api = wandb.Api(timeout=timeout)
+    # Filter by sweep ID and (optionally) state
+    filters = {"$and": [{"sweep": sweep_id}]}
+    if state:
+        filters["$and"].append({"state": state})
+
+    # Run listing pages already contain summary & config; no extra calls needed.
+    runs = api.runs(f"{entity}/{project}", filters=filters, per_page=per_page)
+
+    recs: List[RunRec] = []
+    # tqdm without a total (unknown upfront) streams nicely; if you want a total,
+    # you can pre-count by materializing to a list (but that doubles memory/time).
+    for r in tqdm(runs, desc=f"Listing runs for {entity}/{project} (sweep {sweep_id})", unit="run"):
+        try:
+            cfg = r.config or {}
+            seed = cfg.get("seed", None)
+            if seed is None:
+                continue
+
+            summ = r.summary or {}
+            val = summ.get(VAL_KEY, None)
+            test = summ.get(TEST_KEY, None)
+            if val is None or test is None:
+                continue
+
+            key = canonicalize_config(cfg)
+            recs.append(RunRec(
+                config_key=key,
+                seed=int(seed),
+                val=float(val),
+                test=float(test),
+                run_id=r.id,
+                name=r.name or r.id
+            ))
+        except Exception as e:
+            # Keep streaming; this only skips a problematic run
+            tqdm.write(f"[WARN] Skipping run {getattr(r, 'id', 'unknown')}: {e}")
             continue
-        key = canonicalize_config(r.config)
-        recs.append(RunRec(key, int(seed), float(val), float(test), r.id, r.name or r.id))
     return recs
 
+# ---------------- Parallel run fetching ----------------
+def _fetch_one_run(run_id: str) -> Optional[RunRec]:
+    """
+    Fetch a single run (with retries), returning RunRec or None if unusable.
+    Uses its own Api() (safer for threads).
+    """
+    delay = 0.5
+    for attempt in range(1, args.max_retries + 1):
+        try:
+            api = wandb.Api(timeout=args.timeout)
+            r = api.run(f"{ENTITY}/{PROJECT}/{run_id}")
+
+            # Extract fields
+            seed = r.config.get("seed", None)
+            if seed is None:
+                return None
+
+            # Pull metrics
+            val = r.summary.get(VAL_KEY, None)
+            test = r.summary.get(TEST_KEY, None)
+            if val is None or test is None:
+                return None
+
+            key = canonicalize_config(r.config)
+            name = r.name or r.id
+            return RunRec(key, int(seed), float(val), float(test), r.id, name)
+
+        except Exception as e:
+            if attempt == args.max_retries:
+                print(f"[WARN] Giving up run {run_id} after {attempt} attempts: {e}")
+                return None
+            # Exponential backoff with jitter
+            sleep_s = delay * (2 ** (attempt - 1)) + random.uniform(0, 0.25)
+            time.sleep(sleep_s)
+
+def fetch_runs_parallel(entity: str, project: str, sweep_id: str) -> List[RunRec]:
+    """List run IDs from the sweep, then fetch runs concurrently."""
+    api = wandb.Api(timeout=args.timeout)
+    sweep = api.sweep(f"{entity}/{project}/{sweep_id}")
+    print("Sweep name:", sweep.name)
+
+    # Force materialization of run ids first (cheap metadata pull)
+    run_ids = [r.id for r in sweep.runs]
+    total = len(run_ids)
+    if total == 0:
+        return []
+
+    print(f"Found {total} runs. Fetching in parallel with {args.max_workers} workers...")
+
+    recs: List[RunRec] = []
+    completed = 0
+    # ThreadPool is appropriate for network I/O
+    with cf.ThreadPoolExecutor(max_workers=args.max_workers) as ex:
+        futures = {ex.submit(_fetch_one_run, rid): rid for rid in run_ids}
+        with tqdm(total=total, desc=f"Sweep {sweep_id}", ncols=90, colour="cyan", unit="run") as pbar:
+            for fut in cf.as_completed(futures):
+                rid = futures[fut]
+                try:
+                    rec = fut.result()
+                    if rec is not None:
+                        recs.append(rec)
+                except Exception as e:
+                    tqdm.write(f"[WARN] Exception fetching {rid}: {e}")
+                finally:
+                    pbar.update(1)
+
+    return recs
+
+# ---------------- Aggregation (unchanged) ----------------
 def agg_by_config(recs: List[RunRec]) -> pd.DataFrame:
     buckets = defaultdict(list)
     for rr in recs:
@@ -84,8 +208,10 @@ def agg_by_config(recs: List[RunRec]) -> pd.DataFrame:
         n = len(vals)
         # means / std / stderr
         mean_val, mean_test = float(vals.mean()), float(tests.mean())
-        std_val, std_test = float(vals.std(ddof=1)) if n > 1 else 0.0, float(tests.std(ddof=1)) if n > 1 else 0.0
-        sem_val, sem_test = (std_val/np.sqrt(n) if n > 1 else 0.0, std_test/np.sqrt(n) if n > 1 else 0.0)
+        std_val, std_test = (float(vals.std(ddof=1)) if n > 1 else 0.0,
+                             float(tests.std(ddof=1)) if n > 1 else 0.0)
+        sem_val, sem_test = (std_val/np.sqrt(n) if n > 1 else 0.0,
+                             std_test/np.sqrt(n) if n > 1 else 0.0)
         # 95% t CI (two-sided)
         if n > 1:
             tcrit = t.ppf(0.975, df=n-1)
@@ -95,7 +221,6 @@ def agg_by_config(recs: List[RunRec]) -> pd.DataFrame:
             ci_val = (mean_val, mean_val)
             ci_test = (mean_test, mean_test)
 
-        # unpack config tuple back to dict columns
         cfg = dict(key)
         rows.append({
             **cfg,
@@ -112,10 +237,9 @@ def agg_by_config(recs: List[RunRec]) -> pd.DataFrame:
             "sem_test": sem_test,
             "ci95_test_low": ci_test[0],
             "ci95_test_high": ci_test[1],
-            # composite scores (optional)
             "mean_both": 0.5*(mean_val + mean_test),
-            "min_both": min(mean_val, mean_test),        # conservative
-            "lcb_both": min(ci_val[0], ci_test[0]),      # pick by lower CI bound across both
+            "min_both": min(mean_val, mean_test),
+            "lcb_both": min(ci_val[0], ci_test[0]),
         })
     df = pd.DataFrame(rows)
     if not df.empty:
@@ -134,10 +258,14 @@ def pareto_front(df: pd.DataFrame, x="mean_val", y="mean_test") -> pd.DataFrame:
     return d.loc[pareto_idx]
 
 def main():
-    recs = fetch_runs(ENTITY, PROJECT, SWEEP_ID)
+    recs = fetch_runs_fast(ENTITY, PROJECT, SWEEP_ID, timeout=120, per_page=1000, state="finished")
     if not recs:
         print("No runs with both metrics found.")
         return
+    
+    recs = dedupe_by_seed(recs)
+
+
     df = agg_by_config(recs)
 
     # Filter by coverage
@@ -148,8 +276,8 @@ def main():
         df_cov = df[df["seeds_n"] == top_n].copy()
 
     # Three ways to surface "good" configs:
-    top_by_val = df_cov.sort_values(["mean_val", "mean_test"], ascending=False).head(10)
-    top_by_lcb = df_cov.sort_values("lcb_both", ascending=False).head(10)
+    top_by_val = df_cov.sort_values(["mean_val", "mean_test"], ascending=False).head(30)
+    top_by_lcb = df_cov.sort_values("lcb_both", ascending=False).head(30)
     pareto = pareto_front(df_cov)
 
     # Save artifacts

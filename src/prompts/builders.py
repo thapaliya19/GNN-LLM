@@ -15,7 +15,7 @@ from src.data.labels import label_name
 from src.utils.consts import TTA_NEW_PROMPT_TEMPLATE, TTA_PROMPT_TEMPLATE
 from src.utils.utils import get_device_from_model
 from src.utils.eval import entropy
-
+from src.utils.consts import CORA_ID2LABEL, PUBMED_ID2LABEL, AIRPORT_ID2LABEL
 
 
 _TEMPLATES = None
@@ -203,7 +203,23 @@ def format_example_block(
 
     return "\n".join(lines)
 
-def render_prompt(template_name: str, graph_type: str, current: str, demos: str, topological_description: str) -> str:
+
+def _allowed_classes_str(dataset: str) -> str:
+    if dataset == "cora":
+        names = [CORA_ID2LABEL[i] for i in sorted(CORA_ID2LABEL)]
+    elif dataset == "pubmed":
+        names = [PUBMED_ID2LABEL[i] for i in sorted(PUBMED_ID2LABEL)]
+    else:
+        names = [AIRPORT_ID2LABEL[i] for i in sorted(AIRPORT_ID2LABEL)]
+    # bullet or comma list both work; bullets are clearer to the model
+    return "\n".join(f"- {n}" for n in names)
+
+def _default_topk_for_dataset(dataset: str) -> int:
+    # Mirror TANS: cora -> 3; pubmed -> 1 (you can override via params later)
+    return 3 
+
+
+def render_prompt(template_name: str, graph_type: str, current: str, demos: str, topological_description: str, **extra) -> str:
     """Render a named template with the given inputs."""
     templates = _load_templates()
     if template_name not in templates:
@@ -215,7 +231,8 @@ def render_prompt(template_name: str, graph_type: str, current: str, demos: str,
         graph_type=graph_type,
         original_description=current,
         examples_block=demos,
-        topological_description=topological_description
+        topological_description=topological_description, 
+        **extra
     )
 
 
@@ -228,7 +245,9 @@ def build_full_prompt_for_node_with_template(
     topological_description = data.topo_descriptions[node_idx]
     current = data.text_descriptions[node_idx]
     demos_text = examples_block
-    return render_prompt(template_name, graph_type, current, demos_text, topological_description)
+    allowed = _allowed_classes_str(dataset)
+    topk = _default_topk_for_dataset(dataset)
+    return render_prompt(template_name, graph_type, current, demos_text, topological_description, allowed_class_names=allowed, topk=topk)
 
 
 def append_history_jsonl(path, iteration, snapshot, train_idx_set):

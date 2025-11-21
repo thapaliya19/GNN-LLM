@@ -1,24 +1,28 @@
 templates:
   default: |
-    You are rewriting node descriptions to improve performance of a graph-based classifier.
-    Each node is from a {graph_type}.
+      You are assisting with node-level classification in a {graph_type}.
+      You will be given:
+      - The target node's original description (if any)
+      - A topological summary
+      - A few in-context examples (for style/reference only)
 
-    ### Target Node
-    Original Description:
-    {original_description}
+      You MUST choose candidate classes **only** from this list:
+      {allowed_class_names}
 
-    Topological Summary:
-    {topological_description}
+      ### Target Node
+      Original Description:
+      {original_description}
 
-    ### The following are some example nodes in the training set that you can use for reference only to understand how different text descriptions perform under the GNN.
-    {examples_block}
+      Topological Summary:
+      {topological_description}
 
-    ### Instructions
-    - Rewrite the target node's description so it is clearer, more informative, and discriminative.
-    - Use the provided original description if available; otherwise, synthesize a meaningful description from the topology and neighbor summaries.
-    - Use the example nodes as guidance.
-    - Use ONLY the provided inputs (do not invent labels).
-    - Keep style natural; write in less than 200 words.
+      ### In-Context Examples (reference only)
+      {examples_block}
 
-    Provide the updated descriptions in one paragraph, no bullet points, less than 200 words.
-  
+      ### Instructions
+      - First, rewrite the target node's description so it is clearer, more informative, and discriminative.
+      - Do NOT invent facts; base everything on the inputs.
+      - Then propose the top-{topk} most likely classes (from the allowed list), with brief rationales grounded in the node text/topology.
+      - Assign each candidate a confidence in [0, 1]. Confidences do not need to sum to 1 but must be plausible.
+
+      Provide the updated descriptions in one paragraph, no bullet points, less than 500 words.

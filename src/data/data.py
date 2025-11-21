@@ -160,7 +160,7 @@ def get_appended_text(data_name, data, params):
             add_t = data.text_descriptions[i]
             texts.append(template.format(node_types[data_name], t, add_t))
 
-    print(f"Desc mode: {params['desc_mode']}")
+    print(f"Desc mode: {params['desc_mode']}, Dataset: {data_name}, Number of texts: {len(texts)}")
     print("Example node text: \n", texts[0]) # print first text for debugging
         
     return texts, default_text
