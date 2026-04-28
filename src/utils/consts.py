@@ -1,6 +1,8 @@
 LLM_AVAILABLE_OLLAMA = {
     "gemma3-1b": "gemma3:1b",
     "gemma3-12b": "gemma3:12b",
+    "qwen2.5-72b": "qwen2.5:72b",
+    "qwen2.5-7b": "qwen2.5:7b",
 }
 
 LLM_AVAILABLE_OPENAI = {
@@ -10,6 +12,7 @@ LLM_AVAILABLE_OPENAI = {
 LLM_AVAILABLE_VLLM = {
     "gemma3-1b": "google/gemma-3-1b-it",
     "gemma3-12b": "google/gemma-3-12b-it",
+    "qwen2.5-72b": "Qwen/Qwen2.5-72B-Instruct-AWQ",
 }
 
 SBERT_MODELS = {

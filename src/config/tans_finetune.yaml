@@ -1,0 +1,45 @@
+# TANS baseline GNN hyperparameters (from TANS repo: config/finetune.yaml)
+# Use with: --use_params --config tans_finetune
+TTA:
+  title_abstract:
+    cora:
+      hidden_dim: 128
+      num_layers: 2
+      normalize: none
+      lr: 0.001
+      decay: 0.0001
+      dropout: 0.8
+
+    pubmed:
+      hidden_dim: 256
+      num_layers: 2
+      normalize: none
+      lr: 0.005
+      decay: 0.0005
+      dropout: 0.1
+
+  usa:
+    hidden_dim: 128
+    num_layers: 3
+    normalize: none
+    lr: 0.05
+    decay: 0.0001
+    dropout: 0.1
+
+  brazil:
+    hidden_dim: 64
+    num_layers: 3
+    normalize: none
+    lr: 0.005
+    decay: 0.0001
+    dropout: 0.5
+    train_num: 10
+    val_num: 20
+
+  europe:
+    hidden_dim: 256
+    num_layers: 2
+    normalize: none
+    lr: 0.001
+    decay: 0.00005
+    dropout: 0.5

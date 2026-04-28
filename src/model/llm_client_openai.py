@@ -113,7 +113,7 @@ class LLMClientOpenAI:
         model_name: str = DEFAULT_OPENAI_MODEL,
         *,
         # Generation knobs (tune down to save tokens/cost)
-        temperature: float = 0.0,
+        temperature: float = 1.0,
         max_output_tokens: int = 160,           # keep short; bump only if needed
         top_p: float = 1.0,
         frequency_penalty: float = 0.0,
@@ -141,6 +141,10 @@ class LLMClientOpenAI:
         self.cache = _PromptCache(max_size=cache_size)
         self.system_prompt = system_prompt  # can be None
 
+        # Cost tracking
+        self._total_input_tokens = 0
+        self._total_output_tokens = 0
+
     # ---------- low-level call ----------
     def _chat(self, prompt: str) -> str:
         # cache hit?
@@ -165,6 +169,10 @@ class LLMClientOpenAI:
             )
 
         resp = _retryable_call(_do_call)
+        # Track token usage
+        if hasattr(resp, "usage") and resp.usage is not None:
+            self._total_input_tokens += resp.usage.prompt_tokens or 0
+            self._total_output_tokens += resp.usage.completion_tokens or 0
         out = resp.choices[0].message.content or ""
         out = _strip_spaces(out)
         self.cache.set(prompt, out)
@@ -201,6 +209,20 @@ class LLMClientOpenAI:
     ) -> List[str]:
         workers = parallel_workers or self.parallel_workers
         return self._batched(prompts, self._chat, workers=workers, desc=tqdm_desc)
+
+    def get_cost_summary(self) -> str:
+        """Return a summary of API usage and estimated cost."""
+        # GPT-4o-mini pricing: $0.15/1M input, $0.60/1M output
+        input_cost = self._total_input_tokens * 0.15 / 1_000_000
+        output_cost = self._total_output_tokens * 0.60 / 1_000_000
+        total_cost = input_cost + output_cost
+        return (
+            f"API Cost Summary:\n"
+            f"  Input tokens:  {self._total_input_tokens:,}\n"
+            f"  Output tokens: {self._total_output_tokens:,}\n"
+            f"  Estimated cost: ${total_cost:.4f} "
+            f"(input: ${input_cost:.4f}, output: ${output_cost:.4f})"
+        )
 
     # ---------- parity with your Ollama few-shot rewrite ----------
     # This mirrors your input signature so you don’t have to change callers.

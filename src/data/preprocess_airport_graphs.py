@@ -14,6 +14,9 @@ def parse_args():
                         help='dataset name')
     parser.add_argument('--setting', type=str, default='text_free', choices=['text_free'],
                         help='text setting')
+    parser.add_argument('--mode', type=str, default='ours', choices=['ours', 'tans'],
+                        help='ours: topology-only summary for our TTA prompt; '
+                             'tans: full TANS-style prompt with classification instruction appended')
     return parser.parse_args()
 
 
@@ -93,17 +96,26 @@ def process_topological_features(args):
 
 
 def generate_text(node, methods, args):
-    """Generate text description for a single node using TANS"""
+    """Generate text description for a single node.
+
+    mode='ours': topology-only summary (base + property lines).
+    mode='tans': full TANS-style prompt (base + properties + classification instruction).
+    """
+    stats = graph_stats[args.data_name]
+
     text = template['base'].format(
-        graph_stats[args.data_name]['graph_type'],
-        graph_stats[args.data_name]['node_type'],
-        graph_stats[args.data_name]['total_node'],
-        graph_stats[args.data_name]['edge_type'],
-        graph_stats[args.data_name]['total_edge']
+        stats['graph_type'],
+        stats['node_type'],
+        stats['total_node'],
+        stats['edge_type'],
+        stats['total_edge']
     )
 
     for method, (value, rank) in methods.items():
-        text += template['property'].format(method, value, rank, graph_stats[args.data_name]['total_node'])
+        text += template['property'].format(method, value, rank, stats['total_node'])
+
+    if args.mode == 'tans':
+        text += template['final']
 
     return text
 

@@ -1,0 +1,182 @@
+TTA_TANS:
+  title_abstract:
+    cora:
+      hidden_dim: 128
+      num_layers: 2
+      normalize: none
+      lr: 0.001
+      decay: 0.0005
+      dropout: 0.8
+      # hidden_dim: 64
+      # num_layers: 3
+      # normalize: none
+      # lr: 0.005
+      # decay: 0.0001
+      # dropout: 0.5
+    pubmed:
+      hidden_dim: 128
+      num_layers: 2
+      normalize: none
+      lr: 0.02
+      decay: 0.00005
+      dropout: 0.8
+  title:
+    cora:
+      hidden_dim: 256
+      num_layers: 3
+      normalize: none
+      lr: 0.001
+      decay: 0.00005
+      dropout: 0.8
+    pubmed:
+      hidden_dim: 128
+      num_layers: 2
+      normalize: none
+      lr: 0.001
+      decay: 0.00005
+      dropout: 0.5
+  usa:
+    # hidden_dim: 128
+    # num_layers: 3
+    # normalize: none
+    # lr: 0.05
+    # decay: 0.0001
+    # dropout: 0.1
+    # thie below gives best result right now
+    # hidden_dim: 32
+    # num_layers: 2
+    # normalize: none
+    # dropout: 0.1
+    # lr: 0.025
+    # decay: 0.0001
+
+    # new try after seeing usa_sweep results
+    hidden_dim: 32
+    num_layers: 3
+    normalize: none
+    dropout: 0.25
+    lr: 0.005
+    decay: 0.0002
+  
+  brazil:
+    hidden_dim: 64
+    num_layers: 3
+    normalize: none
+    lr: 0.005
+    decay: 0.0001
+    dropout: 0.5
+    train_num: 10
+    val_num: 20
+  europe:
+    hidden_dim: 256
+    num_layers: 3
+    normalize: none
+    lr: 0.001
+    decay: 0
+    dropout: 0.1
+
+TTA:
+  title_abstract:
+    cora:
+      hidden_dim: 128
+      num_layers: 2
+      normalize: none
+      lr: 0.001
+      decay: 0.0005
+      dropout: 0.8
+    pubmed:
+      hidden_dim: 128
+      num_layers: 2
+      normalize: none
+      lr: 0.02
+      decay: 0.00005
+      dropout: 0.8
+  title:
+    cora:
+      hidden_dim: 256
+      num_layers: 3
+      normalize: none
+      lr: 0.001
+      decay: 0.00005
+      dropout: 0.8
+    pubmed:
+      hidden_dim: 128
+      num_layers: 2
+      normalize: none
+      lr: 0.001
+      decay: 0.00005
+      dropout: 0.5
+  usa:
+    # either of these two work well, see which is the one for original tans, the other is for our pipeline
+    # hidden_dim: 32
+    # num_layers: 3
+    # normalize: none
+    # dropout: 0.2
+    # lr: 0.01
+    # decay: 0.0002
+    
+    # hidden_dim: 32
+    # num_layers: 3
+    # normalize: none
+    # dropout: 0.3
+    # lr: 0.02
+    # decay: 0.0004
+
+    # new try after seeing usa_sweep results (ratio)
+    # hidden_dim: 32
+    # num_layers: 3
+    # normalize: none
+    # dropout: 0.25
+    # lr: 0.005
+    # decay: 0.0002
+
+    # new try after seeing usa_sweep results (ratio) (both desc)
+    hidden_dim: 32
+    num_layers: 3
+    normalize: none
+    dropout: 0.15
+    lr: 0.005
+    decay: 0.0001
+
+    # (number) (both desc)
+    # hidden_dim: 16
+    # num_layers: 3
+    # normalize: none
+    # dropout: 0.1
+    # lr: 0.005
+    # decay: 0
+  brazil:
+    # (ratio_both)
+    hidden_dim: 64
+    num_layers: 3
+    normalize: none
+    lr: 0.005
+    decay: 0.0001
+    dropout: 0.5
+
+    # (number_both)
+    # hidden_dim: 32
+    # num_layers: 3
+    # normalize: none
+    # lr: 0.01
+    # dropout: 0.8
+    # decay: 0.0001
+
+    train_num: 10
+    val_num: 20
+  europe:
+    # (ratio_both)
+    # hidden_dim: 256
+    # num_layers: 3
+    # normalize: none
+    # lr: 0.001
+    # decay: 0
+    # dropout: 0.1
+
+    # (number_both)
+    hidden_dim: 16
+    num_layers: 3
+    normalize: none
+    lr: 0.02
+    dropout: 0.0
+    decay: 0.0002

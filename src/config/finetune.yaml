@@ -1,54 +1,45 @@
-TTA:
+# Best GNN hyperparameters for Tables 2 & 3 (single-dataset evaluation) of the
+# GES paper. These follow the TANS official protocol
+# (https://github.com/Zehong-Wang/TANS/blob/main/TANS/train/config/finetune.yaml)
+# and are applied uniformly across all description methods (TANS, GES, KEA,
+# TAPE) for fair comparison. Use the same block for both --label_setting ratio
+# and --label_setting number; pass --train_num/--val_num at the CLI to override
+# the low-label sampling.
+#
+# Loaded by scripts/train_gnn.py and scripts/ges_pipeline.py with --use_params.
+
+TANS: &defaults
   title_abstract:
     cora:
       hidden_dim: 128
       num_layers: 2
       normalize: none
       lr: 0.001
-      decay: 0.0005
+      decay: 0.0001
       dropout: 0.8
-      # hidden_dim: 64
-      # num_layers: 3
-      # normalize: none
-      # lr: 0.005
-      # decay: 0.0001
-      # dropout: 0.5
     pubmed:
-      hidden_dim: 128
-      num_layers: 2
-      normalize: none
-      lr: 0.02
-      decay: 0.00005
-      dropout: 0.8
-  title:
-    cora:
       hidden_dim: 256
-      num_layers: 3
-      normalize: none
-      lr: 0.001
-      decay: 0.00005
-      dropout: 0.8
-    pubmed:
-      hidden_dim: 128
       num_layers: 2
       normalize: none
-      lr: 0.001
-      decay: 0.00005
-      dropout: 0.5
+      lr: 0.005
+      decay: 0.0005
+      dropout: 0.1
   usa:
-    # hidden_dim: 128
-    # num_layers: 3
-    # normalize: none
-    # lr: 0.05
-    # decay: 0.0001
-    # dropout: 0.1
-    hidden_dim: 32
+    hidden_dim: 128
+    num_layers: 3
+    normalize: none
+    lr: 0.05
+    decay: 0.0001
+    dropout: 0.1
+  europe:
+    hidden_dim: 256
     num_layers: 2
     normalize: none
-    dropout: 0.1
-    lr: 0.025
-    decay: 0.0001
+    lr: 0.001
+    decay: 0.00005
+    dropout: 0.5
   brazil:
+    hidden_dim: 64
     num_layers: 3
     normalize: none
     lr: 0.005
@@ -56,10 +47,10 @@ TTA:
     dropout: 0.5
     train_num: 10
     val_num: 20
-  europe:
-    hidden_dim: 256
-    num_layers: 3
-    normalize: none
-    lr: 0.001
-    decay: 0
-    dropout: 0.1
+
+# GES (ours) uses the same hyperparameters as TANS for fair comparison.
+GES: *defaults
+
+# KEA and TAPE baselines also reuse the TANS default block.
+KEA: *defaults
+TAPE: *defaults

@@ -3,6 +3,7 @@
 
 import os
 import os.path as osp
+import random
 import numpy as np
 import pandas as pd
 
@@ -16,7 +17,12 @@ def parse_args():
                         help='dataset name')
     parser.add_argument('--setting', type=str, default='text_limit', choices=['text_limit', 'text_rich'],
                         help='text setting')
-    
+    parser.add_argument('--mode', type=str, default='ours', choices=['ours', 'tans'],
+                        help='ours: topology-only summary for our TTA prompt; '
+                             'tans: full TANS-style prompt with node text, neighbor text, and classification instruction')
+    parser.add_argument('--num_neighbors', type=int, default=5,
+                        help='number of random 1-hop neighbors to include (tans mode only)')
+
     return parser.parse_args()
 
 
@@ -33,10 +39,19 @@ graph_stats = {
                'total_node': 19717, 'total_edge': 44324},
 }
 
+# Class lists for classification instruction (tans mode)
+class_lists = {
+    'cora': "['Case Based', 'Genetic Algorithms', 'Neural Networks', 'Probabilistic Methods', 'Reinforcement Learning', 'Rule Learning', 'Theory']",
+    'pubmed': "['Diabetes Mellitus Type 1', 'Diabetes Mellitus Type 2', 'Experimental Diabetes']",
+}
 
 template = {
     'base': "Given a node from a {} graph, where the node type is {} with {} nodes, and the edge type is {} with {} edges. ",
     'property': 'The value of property "{}" is {:.4f}, ranked at {} among {} nodes. ',
+    'node_text': "The textual node name is {}. The node description is {}. ",
+    'neighbor_intro': "The following are the connectivity information of the similar nodes: ",
+    'neighbor': "One similar node has name {}, and the description is {}. ",
+    'final': "Output the potential three classes of the node and provide reasons for your assessment. The classes are {}. Your answer should be less than 200 words. ",
 }
 
 
@@ -49,6 +64,10 @@ def load_data(args):
     return names, descriptions
 
 
+def load_one_hop(args):
+    """Load 1-hop neighbor lists"""
+    path = osp.join(osp.dirname(__file__), f'../../datasets/property/{args.data_name}_one_hop.npy')
+    return np.load(path, allow_pickle=True).item()
 
 
 def process_topological_features(args):
@@ -89,19 +108,42 @@ def process_topological_features(args):
     return new_topo_features
 
 
-def generate_text(node, methods, names, descriptions, args):
+def generate_text(node, methods, names, descriptions, args, one_hop=None):
+    """Generate text description for a single node.
 
-    """Generate text description for a single node"""
+    mode='ours': topology-only summary (base + property lines).
+    mode='tans': full TANS prompt (base + node text + neighbor text + properties + classification instruction).
+    """
+    stats = graph_stats[args.data_name]
+
     text = template['base'].format(
-        graph_stats[args.data_name]['graph_type'],
-        graph_stats[args.data_name]['node_type'],
-        graph_stats[args.data_name]['total_node'],
-        graph_stats[args.data_name]['edge_type'],
-        graph_stats[args.data_name]['total_edge']
+        stats['graph_type'],
+        stats['node_type'],
+        stats['total_node'],
+        stats['edge_type'],
+        stats['total_edge']
     )
 
+    if args.mode == 'tans':
+        # Node title + abstract (TANS includes this inline)
+        text += template['node_text'].format(names[node], descriptions[node])
+
+        # 1-hop neighbor text
+        if one_hop is not None and node in one_hop:
+            neighbors = one_hop[node]
+            if len(neighbors) > 0:
+                text += template['neighbor_intro']
+                sampled = random.sample(neighbors, min(args.num_neighbors, len(neighbors)))
+                for nb in sampled:
+                    text += template['neighbor'].format(names[nb], descriptions[nb])
+
+    # Topological properties (included in both modes)
     for method, (value, rank) in methods.items():
-        text += template['property'].format(method, value, rank, graph_stats[args.data_name]['total_node'])
+        text += template['property'].format(method, value, rank, stats['total_node'])
+
+    if args.mode == 'tans':
+        # Classification instruction
+        text += template['final'].format(class_lists[args.data_name])
 
     return text
 
@@ -110,12 +152,14 @@ def main():
     names, descriptions = load_data(args)
     topo_features = process_topological_features(args)
 
+    one_hop = load_one_hop(args) if args.mode == 'tans' else None
+
     # Generate texts for all nodes with progress bar
     texts = []
 
-    
+
     for node, methods in tqdm(topo_features.items(), desc="Generating texts", total=len(topo_features)):
-        texts.append(generate_text(node, methods, names, descriptions, args))
+        texts.append(generate_text(node, methods, names, descriptions, args, one_hop=one_hop))
 
     # Create and save dataframe
     df = pd.DataFrame({

@@ -35,6 +35,7 @@ class PromptBuffer:
       - 'max'            : max(cos(text), cos(struct))
       - 'product'        : cos(text) * cos(struct)
       - 'concat_cosine'  : cosine([√α*t, √(1-α)*s] , [√α*T, √(1-α)*S])
+      - 'random'         : sample k random items from the buffer (respecting masks)
     """
 
     def __init__(
@@ -192,6 +193,9 @@ class PromptBuffer:
             zq = torch.cat([w_t * q_t, w_s * q_s], dim=1)
             zq = F.normalize(zq, p=2, dim=1)
             sims = (zq @ Z.T).squeeze(0)
+        elif method == "random":
+            # We won’t actually use sims for 'random', but keep a placeholder
+            sims = sim_t
         else:
             raise ValueError(f"Unknown sim_method '{method}'")
 
@@ -208,9 +212,21 @@ class PromptBuffer:
         else:
             mask = mask_self
 
-        sims_masked = sims.masked_fill(~mask, float("-inf"))
-        k_eff = int(min(k, sims_masked.numel()))
-        _, topk_idx = torch.topk(sims_masked, k=k_eff)
+        if method == "random":
+            # sample k random valid indices from mask
+            valid_idx = torch.nonzero(mask, as_tuple=False).squeeze(1)
+            if valid_idx.numel() == 0 or k <= 0:
+                return []
+
+            k_eff = int(min(k, valid_idx.numel()))
+            perm = torch.randperm(valid_idx.numel(), device=self.device)[:k_eff]
+            topk_idx = valid_idx[perm]
+        else:
+            sims_masked = sims.masked_fill(~mask, float("-inf"))
+            k_eff = int(min(k, sims_masked.numel()))
+            if k_eff == 0:
+                return []
+            _, topk_idx = torch.topk(sims_masked, k=k_eff)
 
         out: List[BufferItemReturned] = []
         for j in topk_idx.tolist():

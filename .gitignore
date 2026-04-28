@@ -202,17 +202,48 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# ============================================================
+# AutoPrompt / TTA project-specific ignores
+# ============================================================
+
 # SLURM log files
 *.out
 *.err
-*logs*/
-# any csv files present from dataset
-*.csv
 
-# datasets and output folder
+# Experiment log/output dirs and their symlinks
+*_logs*
+all_logs
+grid_logs
+da_logs
+ollama_logs
+*output*
+*runs*
+_old_logs/
+
+# Symlinks to shared storage
+logs
+runs
+sweep-logs
+wandb
+
+# Analysis output directories
+analysis_*
+
+# Datasets (large data assets, not source)
 datasets/
-*output*/
-*runs*/
 
-# wandb
-wandb/
+# CSV files (experiment output aggregates) — whitelist node_descriptions/
+*.csv
+!node_descriptions/**/*.csv
+
+# Jupyter notebooks (not tracked)
+*.ipynb
+
+# Model checkpoints
+*.pth
+
+# Large binary data
+*.npy
+
+# Analysis output directories
+analysis_*/

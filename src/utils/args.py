@@ -1,5 +1,5 @@
 import argparse
-from src.utils.consts import LLM_AVAILABLE_OLLAMA, LLM_AVAILABLE_OPENAI
+from src.utils.consts import LLM_AVAILABLE_OLLAMA, LLM_AVAILABLE_OPENAI, LLM_AVAILABLE_VLLM
 
 
 def get_args():
@@ -44,8 +44,8 @@ def get_args():
     parser.add_argument(
         "--emb_method",
         type=str,
-        default="TTA",
-        choices=["TANS", "TANS_NEW", "TANS_PLUS", "TTA"],
+        default="GES",
+        choices=["TANS", "GES", "KEA", "TAPE", "TTA"],
     )
     parser.add_argument("--emb_file", type=str, default="none")
 
@@ -60,16 +60,19 @@ def get_args():
 
     # LLM Config
     parser.add_argument(
-        "--llm", type=str, default="gemma3-1b", choices=list(LLM_AVAILABLE_OLLAMA.keys()) + list(LLM_AVAILABLE_OPENAI.keys())
+        "--llm", type=str, default="gemma3-1b", choices=list(LLM_AVAILABLE_OLLAMA.keys()) + list(LLM_AVAILABLE_OPENAI.keys()) + list(LLM_AVAILABLE_VLLM.keys())
     )
     parser.add_argument(
         "--system_prompt", type=str, default="You are a helpful assistant in graph learning and graph theory.", help="Optional system prompt for LLM"
     )
     parser.add_argument(
-        "--temperature", type=float, default=0.0, help="Temperature for LLM sampling"
+        "--temperature", type=float, default=1.0, help="Temperature for LLM sampling"
     )
     parser.add_argument(
         "--max_output_tokens", type=int, default=512, help="Max output tokens for LLM"
+    )
+    parser.add_argument(
+        "--tensor_parallel_size", type=int, default=2, help="Number of GPUs for vLLM tensor parallelism"
     )
     parser.add_argument(
         "--ray_concurrency",
@@ -280,8 +283,8 @@ def get_args():
     parser.add_argument("--retrieval_beta", type=float, default=0.5,
                         help="Reliability weight mixing coefficient for (score + beta*reliability).")
 
-    parser.add_argument("--rewrite_iters", type=int, default=2,
-                        help="Number of global rewrite iterations.")
+    parser.add_argument("--rewrite_iters", type=int, default=1,
+                        help="Number of global rewrite passes (default 1 = single-pass GES).")
     parser.add_argument("--hist_max_steps", type=int, default=3,
                         help="How many recent history steps per exemplar to include in prompts.")
     parser.add_argument(
@@ -292,13 +295,44 @@ def get_args():
     )
 
     parser.add_argument("--sim_method", type=str, default="weighted_sum", choices=[
-        "text_only", "struct_only", "weighted_sum", "max", "product", "concat_cosine"
+        "text_only", "struct_only", "weighted_sum", "max", "product", "concat_cosine", "random"
     ], help="Similarity method for retrieving from the prompt buffer.")
 
     parser.add_argument("--ex_block_template", type=str, default="default",
                     help="Name of example-block template from example_blocks.yaml")
     parser.add_argument("--ex_block_yaml", type=str, default=None,
                     help="Path to YAML file with example block templates & history (defaults to src/prompts/example_blocks.yaml)")
+
+    parser.add_argument("--run_dir", type=str, default=None,
+                    help="If set, write ALL outputs to this directory (no extra nesting).")
+    parser.add_argument("--run_tag", type=str, default=None,
+                    help="Optional tag to distinguish reruns (appended to run slug).")
+
+    parser.add_argument("--profile_compute", action="store_true")
+    parser.add_argument("--profile_out", type=str, default="")
+    parser.add_argument("--rewrite_max_nodes", type=int, default=0)  # 0 = no limit
+
+    # Neighbor selection for LLM prompts
+    parser.add_argument("--neighbor_strategy", type=str, default="none",
+                        choices=["none", "random", "similar", "diverse", "mixed"],
+                        help="Strategy for selecting 1-hop neighbors to include in LLM prompt. "
+                             "'none' = no neighbor context (current behavior)")
+    parser.add_argument("--num_neighbors", type=int, default=5,
+                        help="Number of 1-hop neighbors to include in prompt")
+    parser.add_argument("--mmr_lambda", type=float, default=0.7,
+                        help="Lambda for MMR diversity-relevance tradeoff (only for 'diverse' strategy)")
+
+    # Keyphrase-based neighbor summaries (GraphiT, WWW 2025)
+    parser.add_argument("--neighbor_format", type=str, default="raw",
+                        choices=["raw", "keyphrases"],
+                        help="Format for neighbor/example text: 'raw' = truncated sentences, "
+                             "'keyphrases' = extracted keyphrases (GraphiT-style)")
+    parser.add_argument("--keyphrase_top_k", type=int, default=5,
+                        help="Number of keyphrases to extract per node")
+    parser.add_argument("--keyphrase_method", type=str, default="keybert",
+                        choices=["keybert", "tfidf"],
+                        help="Keyphrase extraction method")
+
 
     args = parser.parse_args()
     return vars(args)

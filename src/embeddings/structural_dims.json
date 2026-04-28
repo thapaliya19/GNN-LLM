@@ -1,0 +1,11 @@
+{
+    "cora_node2vec": {
+        "struct_dim": 128,
+        "struct_walk_length": 20,
+        "struct_context_size": 15,
+        "struct_neg_samples": 2,
+        "struct_p": 4.0,
+        "struct_q": 0.25,
+        "struct_epochs": 50
+    }
+}

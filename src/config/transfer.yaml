@@ -1,19 +1,22 @@
-TTA:
+# Best GNN hyperparameters for the pretrain -> finetune transfer experiments
+# in Table 4 of the GES paper (Cora <-> PubMed, low-label / number setting).
+# Configurations selected via 10-seed grid search per source -> target pair.
+#
+# Loaded by scripts/transfer_gnn.py with --use_params.
+
+GES: &defaults
   title_abstract:
     cora:
       pubmed:
-        # hidden_dim: 64
-        # num_layers: 2
-        # normalize: none
-        # lr: 0.05
-        # decay: 0.0001
-        # dropout: 0.5
         hidden_dim: 256
         num_layers: 2
         normalize: none
         lr: 0.005
-        decay: 0.00050
+        decay: 0.0005
         dropout: 0.2
+        pt_epochs: 500
+        pt_lr: 0.001
+        pt_decay: 0.0001
     pubmed:
       cora:
         hidden_dim: 8
@@ -22,20 +25,9 @@ TTA:
         lr: 0.005
         decay: 0.0001
         dropout: 0.5
-  title:
-    cora:
-      pubmed:
-        hidden_dim: 32
-        num_layers: 2
-        normalize: none
-        lr: 0.005
-        decay: 0
-        dropout: 0.5
-    pubmed:
-      cora:
-        hidden_dim: 32
-        num_layers: 2
-        normalize: none
-        lr: 0.005
-        decay: 0
-        dropout: 0.1
+        pt_epochs: 500
+        pt_lr: 0.001
+        pt_decay: 0.0001
+
+# TANS baseline uses the same block.
+TANS: *defaults

@@ -23,7 +23,7 @@ _CTRL = re.compile(r'[\x00-\x1F\x7F]')
 def _clean(s: str) -> str:
     return _CTRL.sub('', s)
 
-def _resolve_by_iterdir(p: Path) -> Path | None:
+def _resolve_by_iterdir(p: Path):
     """Walk each component; if missing, pick the entry whose name matches after cleaning (and with ? as wildcard)."""
     is_abs = p.is_absolute()
     parts = [part for part in str(p).split('/') if part not in ('', '.')]
@@ -197,9 +197,12 @@ def citation_graph(params, dataset_name, desc_csv=None, topo_csv=None):
     topo_df = pd.read_csv(topo_csv, sep=',')
     data.topo_descriptions = topo_df['topo_features'].tolist()
 
-    # load text descriptions from CSV
-    df = read_tsv_weird(desc_csv)
-    data.text_descriptions = df['answer'].tolist()
+    # load text descriptions from CSV (if provided)
+    if desc_csv and desc_csv not in ('none', 'None', None):
+        df = read_tsv_weird(desc_csv)
+        data.text_descriptions = df['answer'].tolist()
+    else:
+        data.text_descriptions = [""] * data.num_nodes
 
     texts, default_text = get_appended_text(dataset_name, data, params)
     data.text_descriptions = texts
@@ -233,8 +236,11 @@ def airport_graph(params, dataset_name, desc_csv=None, topo_csv=None):
     topo_df = pd.read_csv(topo_csv, sep=',')
     data.topo_descriptions = topo_df['topo_features'].tolist()
 
-    df = read_tsv_weird(desc_csv)
-    data.text_descriptions = df['answer'].tolist()
+    if desc_csv and desc_csv not in ('none', 'None', None):
+        df = read_tsv_weird(desc_csv)
+        data.text_descriptions = df['answer'].tolist()
+    else:
+        data.text_descriptions = [""] * data.num_nodes
 
     texts, default_text = get_appended_text(dataset_name, data, params)
 

@@ -1,0 +1,109 @@
+# Best GNN hyperparameters for the domain-adaptation experiments in Table 4 of
+# the GES paper (train on source airport graph, evaluate on target).
+# GES configurations selected via 10-seed grid search (36 configs per direction).
+# TANS configurations come from the official TANS repo
+# (https://github.com/Zehong-Wang/TANS/blob/main/TANS/train/config/da.yaml).
+#
+# Loaded by scripts/da_gnn.py with --use_params.
+
+GES:
+  usa:
+    brazil:
+      hidden_dim: 32
+      num_layers: 3
+      normalize: none
+      lr: 0.005
+      decay: 0.00005
+      dropout: 0.5
+      train_num: 10
+      val_num: 20
+    europe:
+      hidden_dim: 64
+      num_layers: 2
+      normalize: batch
+      lr: 0.01
+      decay: 0.0001
+      dropout: 0.3
+  brazil:
+    usa:
+      hidden_dim: 16
+      num_layers: 3
+      normalize: batch
+      lr: 0.005
+      decay: 0
+      dropout: 0.5
+    europe:
+      hidden_dim: 16
+      num_layers: 3
+      normalize: none
+      lr: 0.1
+      decay: 0.0001
+      dropout: 0.1
+  europe:
+    usa:
+      hidden_dim: 8
+      num_layers: 2
+      normalize: batch
+      lr: 0.005
+      decay: 0.0001
+      dropout: 0.8
+    brazil:
+      hidden_dim: 16
+      num_layers: 2
+      normalize: none
+      lr: 0.01
+      decay: 0
+      dropout: 0.7
+      train_num: 10
+      val_num: 20
+
+TANS:
+  usa:
+    brazil:
+      hidden_dim: 64
+      num_layers: 3
+      normalize: none
+      lr: 0.01
+      decay: 0.00005
+      dropout: 0.0
+      train_num: 10
+      val_num: 20
+    europe:
+      hidden_dim: 64
+      num_layers: 2
+      normalize: batch
+      lr: 0.005
+      decay: 0.0001
+      dropout: 0.5
+  brazil:
+    usa:
+      hidden_dim: 8
+      num_layers: 3
+      normalize: batch
+      lr: 0.01
+      decay: 0
+      dropout: 0.5
+    europe:
+      hidden_dim: 16
+      num_layers: 3
+      normalize: none
+      lr: 0.05
+      decay: 0.0001
+      dropout: 0.0
+  europe:
+    usa:
+      hidden_dim: 16
+      num_layers: 2
+      normalize: batch
+      lr: 0.005
+      decay: 0.0001
+      dropout: 0.5
+    brazil:
+      hidden_dim: 32
+      num_layers: 2
+      normalize: batch
+      lr: 0.005
+      decay: 0
+      dropout: 0.8
+      train_num: 10
+      val_num: 20

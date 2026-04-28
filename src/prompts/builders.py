@@ -120,6 +120,52 @@ def _format_exemplar_history_yaml(
         s += "\n"
     return s
 
+def format_target_history_block(
+    nid: int,
+    hist_dict: Dict[int, List[Dict[str, Any]]],
+    dataset: str,
+    max_steps: Optional[int] = None,
+) -> str:
+    """
+    Build a short history block for the *target* node.
+
+    Summary focuses on:
+      - GNN prediction and correctness,
+      - top predicted probability,
+      - predictive entropy,
+      - and the description text used in each past iteration.
+    """
+    if hist_dict is None:
+        return ""
+    if nid not in hist_dict or len(hist_dict[nid]) == 0:
+        return ""
+
+    records = hist_dict[nid]
+    if max_steps is not None:
+        records = records[-max_steps:]  # keep most recent few
+
+    lines: List[str] = []
+    lines.append("### Prediction history for this target node (most recent first)")
+
+    for h in reversed(records):  # newest first
+        true_name = label_name(dataset, h["true_label"])
+        pred_name = label_name(dataset, h["pred_label"])
+        correctness = "correct" if h["pred_label"] == h["true_label"] else "wrong"
+        top_prob = float(h.get("top_prob", 0.0))
+        entropy_val = float(h.get("entropy", 0.0))
+        text_desc = h.get("text_description", "")
+        iter_id = h.get("iter", "?")
+
+        lines.append(
+            f"- Iteration {iter_id}: GNN prediction = {pred_name} ({correctness}), "
+            f"top probability = {top_prob:.3f}, predictive entropy = {entropy_val:.3f}."
+        )
+        if text_desc:
+            lines.append(f"  Description used in this iteration: {text_desc}")
+
+    return "\n".join(lines) + "\n"
+
+
 # ---------- EXAMPLE BLOCK RENDERING ----------
 def format_example_block(
     demo_nodes: Sequence[int],
@@ -130,6 +176,7 @@ def format_example_block(
     *,
     template_name: str = "default",
     yaml_path: Optional[str] = None,
+    keyphrases_by_node: Optional[Dict[int, list]] = None,
 ) -> str:
     """
     Build the exemplars string for the prompt from YAML template + settings.
@@ -176,10 +223,17 @@ def format_example_block(
             or "N/A"
         )
 
+        # Use keyphrases instead of raw text when available
+        if keyphrases_by_node and nid in keyphrases_by_node:
+            from src.neighbors.keyphrases import format_keyphrases
+            orig_desc = format_keyphrases(keyphrases_by_node[nid])
+        else:
+            orig_desc = m.get("original_text", "")
+
         fields = {
             "item_number": j,
             "node_idx": nid,
-            "original_description": m.get("original_text", ""),
+            "original_description": orig_desc,
             "topological_description": topo,
             "gt_label": label_name(dataset, m["true_label"]),
             "gnn_pred": label_name(dataset, m["pred_label"]),
@@ -219,25 +273,54 @@ def _default_topk_for_dataset(dataset: str) -> int:
     return 3 
 
 
-def render_prompt(template_name: str, graph_type: str, current: str, demos: str, topological_description: str, **extra) -> str:
+def render_prompt(
+    template_name: str,
+    graph_type: str,
+    current: str,
+    demos: str,
+    topological_description: str,
+    target_history_block: str = "",
+    class_hint_prefix: str = "",
+    class_hint_suffix: str = "",
+    neighbor_context: Optional[str] = None,
+    classes: str = "",
+    top_k_classes: int = 3,
+) -> str:
     """Render a named template with the given inputs."""
     templates = _load_templates()
+    # Auto-select neighbor template when neighbor_context is provided
+    if neighbor_context and template_name == "default":
+        template_name = "default_with_neighbors"
     if template_name not in templates:
         raise ValueError(
             f"xTemplate '{template_name}' not found in templates. Available: {list(templates.keys())}"
         )
     template = templates[template_name]
-    return template.format(
+    fmt_kwargs = dict(
         graph_type=graph_type,
         original_description=current,
         examples_block=demos,
-        topological_description=topological_description, 
-        **extra
+        topological_description=topological_description,
+        target_history_block=target_history_block,
+        class_hint_prefix=class_hint_prefix,
+        class_hint_suffix=class_hint_suffix,
+        classes=classes,
+        top_k_classes=top_k_classes,
     )
+    if neighbor_context is not None:
+        fmt_kwargs["neighbor_context"] = neighbor_context
+    return template.format(**fmt_kwargs)
 
 
 def build_full_prompt_for_node_with_template(
-    node_idx, data, examples_block, dataset, template_name: str
+    node_idx,
+    data,
+    examples_block,
+    dataset,
+    template_name: str,
+    target_history_block: str = "",
+    neighbor_context: Optional[str] = None,
+    top_k_classes: int = 3,
 ):
     graph_type = (
         "citation network" if dataset in ["cora", "pubmed"] else "airport network"
@@ -245,21 +328,63 @@ def build_full_prompt_for_node_with_template(
     topological_description = data.topo_descriptions[node_idx]
     current = data.text_descriptions[node_idx]
     demos_text = examples_block
-    allowed = _allowed_classes_str(dataset)
-    topk = _default_topk_for_dataset(dataset)
-    return render_prompt(template_name, graph_type, current, demos_text, topological_description, allowed_class_names=allowed, topk=topk)
+
+    # Class list for classification instruction
+    classes = _allowed_classes_str(dataset)
+
+    # Airport-specific guidance about class semantics
+    if dataset in ["usa", "europe", "brazil"]:
+        class_hint_prefix = (
+            "Classes represent different levels of airport activity "
+            "(e.g., very low, low, medium, very high), based on how many "
+            "connections the airport has and its position in the network."
+        )
+        class_hint_suffix = (
+            "When rewriting the description, especially highlight why this node is more "
+            "likely to belong to some classes or activity levels rather than others "
+            "(e.g., global hub vs regional hub vs local airport)."
+        )
+    else:
+        class_hint_prefix = ""
+        class_hint_suffix = ""
+
+    return render_prompt(
+        template_name,
+        graph_type,
+        current,
+        demos_text,
+        topological_description,
+        target_history_block=target_history_block,
+        class_hint_prefix=class_hint_prefix,
+        class_hint_suffix=class_hint_suffix,
+        neighbor_context=neighbor_context,
+        classes=classes,
+        top_k_classes=top_k_classes,
+    )
 
 
-def append_history_jsonl(path, iteration, snapshot, train_idx_set):
-    """Only persist TRAIN nodes for in-context learning history"""
+def append_history_jsonl(path, iteration, snapshot, keep_idx_set=None):
+    """
+    Append per-node prediction snapshot to JSONL.
+
+    If keep_idx_set is provided, only nodes whose index is in the set are written.
+    If keep_idx_set is None, *all* nodes from the snapshot are stored.
+
+    This file is later used to provide prediction/entropy history for
+    the *target* node across rewrite iterations.
+    """
     recs = []
     for rec in snapshot:
-        if rec["node_idx"] in train_idx_set:
-            recs.append({"iter": iteration, **rec})
+        nid = rec["node_idx"]
+        if keep_idx_set is not None and nid not in keep_idx_set:
+            continue
+        recs.append({"iter": iteration, **rec})
+
     with open(path, "a") as f:
         for r in recs:
             f.write(json.dumps(r) + "\n")
-    print(f"[HIST] Appended {len(recs)} training records to {path}")
+
+    print(f"[HIST] Appended {len(recs)} records to {path}")
 
 
 def load_history(path):
